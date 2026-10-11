@@ -13,6 +13,11 @@ import {
   ChefHat,
   Download,
   Upload,
+  Receipt,
+  IndianRupee,
+  CreditCard,
+  Banknote,
+  QrCode,
 } from "lucide-react";
 
 interface MenuItem {
@@ -35,12 +40,24 @@ interface RestaurantConfig {
   footerNote: string;
 }
 
+interface SettledOrder {
+  id: string;
+  timestamp: string;
+  table: string;
+  items: { name: string; price: number; qty: number }[];
+  subtotal: number;
+  tax: number;
+  grandTotal: number;
+  paymentMode: "Cash" | "UPI" | "Card";
+}
+
 interface PrintedBillSnapshot {
   items: { name: string; price: number; qty: number }[];
   subtotal: number;
   tax: number;
   grandTotal: number;
   table: string;
+  paymentMode: "Cash" | "UPI" | "Card";
 }
 
 const themePresets = [
@@ -51,6 +68,7 @@ const themePresets = [
 ];
 
 const categories = ["All", "Fast Food", "Main Course", "Beverages", "Desserts"];
+const tableList = ["Table 1", "Table 2", "Table 3", "Table 4", "Table 5", "Table 6", "Parcel"];
 
 const initialConfig: RestaurantConfig = {
   name: "Royal Spice Bistro",
@@ -77,12 +95,17 @@ export default function UniversalPOS() {
   const [items, setItems] = useState<MenuItem[]>(initialItems);
   const [selectedTable, setSelectedTable] = useState<string>("Table 1");
   const [activeCategory, setActiveCategory] = useState<string>("All");
-  const [cart, setCart] = useState<{ [key: string]: number }>({});
+  
+  // Per-Table Carts: { "Table 1": { "item_id": 2 }, "Table 2": { ... } }
+  const [tableCarts, setTableCarts] = useState<{ [table: string]: { [itemId: string]: number } }>({});
+  
+  const [paymentMode, setPaymentMode] = useState<"Cash" | "UPI" | "Card">("Cash");
+  const [salesHistory, setSalesHistory] = useState<SettledOrder[]>([]);
   const [printMode, setPrintMode] = useState<"BILL" | "KOT">("BILL");
   const [printedBill, setPrintedBill] = useState<PrintedBillSnapshot | null>(null);
   const [isClient, setIsClient] = useState(false);
 
-  // New Item Form State
+  // New Item State
   const [itemName, setItemName] = useState("");
   const [itemPrice, setItemPrice] = useState("");
   const [itemCategory, setItemCategory] = useState("Fast Food");
@@ -92,14 +115,47 @@ export default function UniversalPOS() {
     setIsClient(true);
     const savedConfig = localStorage.getItem("pos_config");
     const savedItems = localStorage.getItem("pos_items");
+    const savedHistory = localStorage.getItem("pos_sales_history");
+    const savedCarts = localStorage.getItem("pos_table_carts");
+
     if (savedConfig) setConfig(JSON.parse(savedConfig));
     if (savedItems) setItems(JSON.parse(savedItems));
+    if (savedHistory) setSalesHistory(JSON.parse(savedHistory));
+    if (savedCarts) setTableCarts(JSON.parse(savedCarts));
   }, []);
+
+  const currentCart = useMemo(() => {
+    return tableCarts[selectedTable] || {};
+  }, [tableCarts, selectedTable]);
+
+  const updateCurrentCart = (newCart: { [itemId: string]: number }) => {
+    setTableCarts((prev) => {
+      const updated = { ...prev, [selectedTable]: newCart };
+      localStorage.setItem("pos_table_carts", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const addToCart = (id: string) => {
+    const updated = { ...currentCart, [id]: (currentCart[id] || 0) + 1 };
+    updateCurrentCart(updated);
+  };
+
+  const removeFromCart = (id: string) => {
+    const currentQty = currentCart[id] || 0;
+    const updated = { ...currentCart };
+    if (currentQty <= 1) {
+      delete updated[id];
+    } else {
+      updated[id] = currentQty - 1;
+    }
+    updateCurrentCart(updated);
+  };
 
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
     localStorage.setItem("pos_config", JSON.stringify(config));
-    alert("Branding & Restaurant profile saved!");
+    alert("Branding configurations saved!");
   };
 
   const handleAddItem = (e: React.FormEvent) => {
@@ -125,29 +181,13 @@ export default function UniversalPOS() {
     localStorage.setItem("pos_items", JSON.stringify(updated));
   };
 
-  const addToCart = (id: string) => {
-    setCart((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-  };
-
-  const removeFromCart = (id: string) => {
-    setCart((prev) => {
-      const current = prev[id] || 0;
-      if (current <= 1) {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
-      }
-      return { ...prev, [id]: current - 1 };
-    });
-  };
-
-  // Calculations
+  // Calculations for current table
   const subtotal = useMemo(() => {
-    return Object.entries(cart).reduce((sum, [id, qty]) => {
+    return Object.entries(currentCart).reduce((sum, [id, qty]) => {
       const item = items.find((i) => i.id === id);
       return sum + (item ? item.price * qty : 0);
     }, 0);
-  }, [cart, items]);
+  }, [currentCart, items]);
 
   const tax = Number(((subtotal * config.taxRate) / 100).toFixed(2));
   const grandTotal = subtotal + tax;
@@ -157,11 +197,19 @@ export default function UniversalPOS() {
     return items.filter((item) => item.category === activeCategory);
   }, [items, activeCategory]);
 
-  const triggerPrint = (mode: "BILL" | "KOT") => {
-    if (Object.keys(cart).length === 0) return;
+  // Sales Summary
+  const salesSummary = useMemo(() => {
+    const totalRevenue = salesHistory.reduce((sum, o) => sum + o.grandTotal, 0);
+    const cashTotal = salesHistory.filter((o) => o.paymentMode === "Cash").reduce((sum, o) => sum + o.grandTotal, 0);
+    const upiTotal = salesHistory.filter((o) => o.paymentMode === "UPI").reduce((sum, o) => sum + o.grandTotal, 0);
+    const cardTotal = salesHistory.filter((o) => o.paymentMode === "Card").reduce((sum, o) => sum + o.grandTotal, 0);
+    return { totalRevenue, cashTotal, upiTotal, cardTotal, totalOrders: salesHistory.length };
+  }, [salesHistory]);
 
-    // Snapshot banakar freeze karte hain taaki print ke dauraan 0 na aaye
-    const billItems = Object.entries(cart)
+  const triggerPrint = (mode: "BILL" | "KOT") => {
+    if (Object.keys(currentCart).length === 0) return;
+
+    const billItems = Object.entries(currentCart)
       .map(([id, qty]) => {
         const item = items.find((i) => i.id === id);
         return item ? { name: item.name, price: item.price, qty } : null;
@@ -174,6 +222,7 @@ export default function UniversalPOS() {
       tax,
       grandTotal,
       table: selectedTable,
+      paymentMode,
     });
 
     setPrintMode(mode);
@@ -181,14 +230,29 @@ export default function UniversalPOS() {
     setTimeout(() => {
       window.print();
       if (mode === "BILL") {
-        setCart({});
+        // Record sales history
+        const newRecord: SettledOrder = {
+          id: `ORD-${Date.now().toString().slice(-6)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          table: selectedTable,
+          items: billItems,
+          subtotal,
+          tax,
+          grandTotal,
+          paymentMode,
+        };
+        const updatedHistory = [newRecord, ...salesHistory];
+        setSalesHistory(updatedHistory);
+        localStorage.setItem("pos_sales_history", JSON.stringify(updatedHistory));
+
+        // Clear current table cart only
+        updateCurrentCart({});
       }
     }, 200);
   };
 
-  // Backup Import & Export
   const handleExportBackup = () => {
-    const backupData = { config, items };
+    const backupData = { config, items, salesHistory };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -207,9 +271,11 @@ export default function UniversalPOS() {
         if (data.config && data.items) {
           setConfig(data.config);
           setItems(data.items);
+          if (data.salesHistory) setSalesHistory(data.salesHistory);
           localStorage.setItem("pos_config", JSON.stringify(data.config));
           localStorage.setItem("pos_items", JSON.stringify(data.items));
-          alert("Backup data restored successfully!");
+          if (data.salesHistory) localStorage.setItem("pos_sales_history", JSON.stringify(data.salesHistory));
+          alert("Backup restored successfully!");
         }
       } catch {
         alert("Invalid backup file!");
@@ -238,7 +304,10 @@ export default function UniversalPOS() {
             <h2 className="text-lg font-black uppercase tracking-wider">*** KITCHEN TICKET (KOT) ***</h2>
           )}
           <p className="text-[10px] mt-1">{new Date().toLocaleString()}</p>
-          <p className="font-bold text-xs mt-0.5">Order Type: {printedBill?.table || selectedTable}</p>
+          <div className="flex justify-between font-bold text-xs mt-1">
+            <span>Order: {printedBill?.table || selectedTable}</span>
+            {printMode === "BILL" && <span>Mode: {printedBill?.paymentMode}</span>}
+          </div>
         </div>
 
         <div className="py-2 border-b border-black space-y-1">
@@ -322,31 +391,70 @@ export default function UniversalPOS() {
           </div>
         </header>
 
+        {/* Daily Summary Statistics Bar */}
+        <section className="max-w-7xl mx-auto px-4 md:px-6 pt-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+            <div className="border-r border-slate-100 pr-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Total Sales</span>
+              <p className="text-xl font-black text-slate-900 mt-0.5">
+                {config.currency} {salesSummary.totalRevenue}
+              </p>
+            </div>
+            <div className="border-r border-slate-100 pr-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Orders Settled</span>
+              <p className="text-xl font-black text-slate-900 mt-0.5">
+                {salesSummary.totalOrders} <span className="text-xs font-medium text-slate-500">bills</span>
+              </p>
+            </div>
+            <div className="border-r border-slate-100 pr-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Cash In Drawer</span>
+              <p className="text-xl font-black text-emerald-600 mt-0.5">
+                {config.currency} {salesSummary.cashTotal}
+              </p>
+            </div>
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Digital (UPI/Card)</span>
+              <p className="text-xl font-black text-blue-600 mt-0.5">
+                {config.currency} {salesSummary.upiTotal + salesSummary.cardTotal}
+              </p>
+            </div>
+          </div>
+        </section>
+
         <div className="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Operations & Menu */}
+          {/* Left Column: Tables, Menu & Sales Records */}
           <section className="lg:col-span-2 space-y-6">
             {/* Table Selection Bar */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
               <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5 mb-2.5">
-                <UtensilsCrossed className="w-4 h-4" /> Select Table / Counter
+                <UtensilsCrossed className="w-4 h-4" /> Live Tables (Select to Manage Order)
               </label>
               <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-                {["Table 1", "Table 2", "Table 3", "Table 4", "Table 5", "Table 6", "Parcel"].map((tbl) => (
-                  <button
-                    key={tbl}
-                    onClick={() => setSelectedTable(tbl)}
-                    className={`py-2 px-2 rounded-xl text-xs font-bold transition border ${
-                      selectedTable === tbl
-                        ? "text-white border-transparent shadow-sm"
-                        : "bg-slate-50 text-slate-700 hover:bg-slate-100"
-                    }`}
-                    style={{
-                      backgroundColor: selectedTable === tbl ? config.primaryColor : undefined,
-                    }}
-                  >
-                    {tbl}
-                  </button>
-                ))}
+                {tableList.map((tbl) => {
+                  const hasActiveItems = Object.keys(tableCarts[tbl] || {}).length > 0;
+                  const isSelected = selectedTable === tbl;
+                  return (
+                    <button
+                      key={tbl}
+                      onClick={() => setSelectedTable(tbl)}
+                      className={`relative py-2.5 px-2 rounded-xl text-xs font-bold transition border ${
+                        isSelected
+                          ? "text-white border-transparent shadow-sm"
+                          : hasActiveItems
+                          ? "bg-amber-50 text-amber-900 border-amber-300"
+                          : "bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200"
+                      }`}
+                      style={{
+                        backgroundColor: isSelected ? config.primaryColor : undefined,
+                      }}
+                    >
+                      {tbl}
+                      {hasActiveItems && !isSelected && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -386,7 +494,6 @@ export default function UniversalPOS() {
                         className={`w-3.5 h-3.5 border rounded-sm flex items-center justify-center ${
                           item.isVeg ? "border-green-600" : "border-red-600"
                         }`}
-                        title={item.isVeg ? "Pure Veg" : "Non-Veg"}
                       >
                         <div
                           className={`w-2 h-2 rounded-full ${
@@ -421,7 +528,7 @@ export default function UniversalPOS() {
                 ))}
               </div>
 
-              {/* Add New Item Section */}
+              {/* Add New Item */}
               <form onSubmit={handleAddItem} className="mt-6 pt-4 border-t grid grid-cols-1 sm:grid-cols-5 gap-2">
                 <input
                   type="text"
@@ -466,13 +573,44 @@ export default function UniversalPOS() {
               </form>
             </div>
 
+            {/* Recent Orders / Sales Audit Log */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <h2 className="text-lg font-bold flex items-center gap-2 mb-3">
+                <Receipt className="w-5 h-5 text-slate-600" /> Settled Bills History
+              </h2>
+              {salesHistory.length === 0 ? (
+                <p className="text-xs text-slate-400 py-4 text-center">No settled bills recorded yet.</p>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-52 overflow-y-auto">
+                  {salesHistory.slice(0, 10).map((record) => (
+                    <div key={record.id} className="py-2.5 flex justify-between items-center text-xs">
+                      <div>
+                        <span className="font-bold text-slate-900">{record.id}</span>
+                        <span className="text-slate-400 mx-1.5">•</span>
+                        <span className="font-semibold text-slate-700">{record.table}</span>
+                        <span className="text-slate-400 mx-1.5">•</span>
+                        <span className="text-slate-500">{record.timestamp}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                          {record.paymentMode}
+                        </span>
+                        <span className="font-bold text-slate-900">
+                          {config.currency} {record.grandTotal}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Customization & White-Label Panel */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-bold flex items-center gap-2">
-                  <Palette className="w-5 h-5 text-slate-600" /> White-Label Settings
+                  <Palette className="w-5 h-5 text-slate-600" /> White-Label Configurations
                 </h2>
-                {/* Theme Presets */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] font-semibold text-slate-400">Presets:</span>
                   {themePresets.map((preset) => (
@@ -585,20 +723,22 @@ export default function UniversalPOS() {
             </div>
           </section>
 
-          {/* Right Column: Billing & KOT Counter */}
+          {/* Right Column: Billing & Settle Counter */}
           <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-fit space-y-4">
             <div className="flex justify-between items-center pb-2 border-b">
-              <h2 className="text-lg font-bold">Current Order</h2>
+              <h2 className="text-lg font-bold">Billing Counter</h2>
               <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 rounded-full text-slate-800">
                 {selectedTable}
               </span>
             </div>
 
-            <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto pr-1">
-              {Object.keys(cart).length === 0 ? (
-                <p className="text-xs text-slate-400 py-10 text-center">Cart is empty. Select items to order.</p>
+            <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto pr-1">
+              {Object.keys(currentCart).length === 0 ? (
+                <p className="text-xs text-slate-400 py-10 text-center">
+                  No items in {selectedTable}. Add items from the catalog.
+                </p>
               ) : (
-                Object.entries(cart).map(([id, qty]) => {
+                Object.entries(currentCart).map(([id, qty]) => {
                   const item = items.find((i) => i.id === id);
                   if (!item) return null;
                   return (
@@ -648,7 +788,34 @@ export default function UniversalPOS() {
               </div>
             </div>
 
-            {/* Print Action Buttons */}
+            {/* Payment Mode Selection */}
+            <div className="pt-2">
+              <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1.5">
+                Payment Method
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { mode: "Cash" as const, icon: Banknote },
+                  { mode: "UPI" as const, icon: QrCode },
+                  { mode: "Card" as const, icon: CreditCard },
+                ].map(({ mode, icon: Icon }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setPaymentMode(mode)}
+                    className={`py-2 px-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border transition ${
+                      paymentMode === mode
+                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" /> {mode}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
             <div className="grid grid-cols-2 gap-2 pt-2">
               <button
                 onClick={() => triggerPrint("KOT")}
