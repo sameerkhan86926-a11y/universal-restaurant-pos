@@ -1502,7 +1502,8 @@ export default function UltimateRestaurantPOS() {
                             <Clock className="w-3 h-3 text-slate-400" /> Seated: {tbl.occupiedSince || "Just now"}
                           </p>
                           <p className="font-bold text-slate-800">
-                            Active Items: {tbl.activeCart.reduce((s, i) => s + i.qty, 0)} dishes
+                            Active Items: tbl.activeCart.reduce((s: number, i: CartItem) => s + i.qty, 0)
+ dishes
                           </p>
                         </div>
                       )}
