@@ -13,7 +13,6 @@ import {
   ChefHat,
   Download,
   Upload,
-  CircleDot,
 } from "lucide-react";
 
 interface MenuItem {
@@ -34,6 +33,14 @@ interface RestaurantConfig {
   taxRate: number;
   gstNumber: string;
   footerNote: string;
+}
+
+interface PrintedBillSnapshot {
+  items: { name: string; price: number; qty: number }[];
+  subtotal: number;
+  tax: number;
+  grandTotal: number;
+  table: string;
 }
 
 const themePresets = [
@@ -72,6 +79,7 @@ export default function UniversalPOS() {
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [cart, setCart] = useState<{ [key: string]: number }>({});
   const [printMode, setPrintMode] = useState<"BILL" | "KOT">("BILL");
+  const [printedBill, setPrintedBill] = useState<PrintedBillSnapshot | null>(null);
   const [isClient, setIsClient] = useState(false);
 
   // New Item Form State
@@ -151,13 +159,31 @@ export default function UniversalPOS() {
 
   const triggerPrint = (mode: "BILL" | "KOT") => {
     if (Object.keys(cart).length === 0) return;
+
+    // Snapshot banakar freeze karte hain taaki print ke dauraan 0 na aaye
+    const billItems = Object.entries(cart)
+      .map(([id, qty]) => {
+        const item = items.find((i) => i.id === id);
+        return item ? { name: item.name, price: item.price, qty } : null;
+      })
+      .filter(Boolean) as { name: string; price: number; qty: number }[];
+
+    setPrintedBill({
+      items: billItems,
+      subtotal,
+      tax,
+      grandTotal,
+      table: selectedTable,
+    });
+
     setPrintMode(mode);
+
     setTimeout(() => {
       window.print();
       if (mode === "BILL") {
         setCart({});
       }
-    }, 100);
+    }, 200);
   };
 
   // Backup Import & Export
@@ -212,22 +238,18 @@ export default function UniversalPOS() {
             <h2 className="text-lg font-black uppercase tracking-wider">*** KITCHEN TICKET (KOT) ***</h2>
           )}
           <p className="text-[10px] mt-1">{new Date().toLocaleString()}</p>
-          <p className="font-bold text-xs mt-0.5">Order Type: {selectedTable}</p>
+          <p className="font-bold text-xs mt-0.5">Order Type: {printedBill?.table || selectedTable}</p>
         </div>
 
         <div className="py-2 border-b border-black space-y-1">
-          {Object.entries(cart).map(([id, qty]) => {
-            const item = items.find((i) => i.id === id);
-            if (!item) return null;
-            return (
-              <div key={id} className="flex justify-between items-center">
-                <span className="font-semibold">{item.name} × {qty}</span>
-                {printMode === "BILL" && (
-                  <span>{config.currency} {item.price * qty}</span>
-                )}
-              </div>
-            );
-          })}
+          {printedBill?.items.map((item, idx) => (
+            <div key={idx} className="flex justify-between items-center">
+              <span className="font-semibold">{item.name} × {item.qty}</span>
+              {printMode === "BILL" && (
+                <span>{config.currency} {item.price * item.qty}</span>
+              )}
+            </div>
+          ))}
         </div>
 
         {printMode === "BILL" ? (
@@ -235,15 +257,15 @@ export default function UniversalPOS() {
             <div className="pt-2 space-y-1">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
-                <span>{config.currency} {subtotal}</span>
+                <span>{config.currency} {printedBill?.subtotal}</span>
               </div>
               <div className="flex justify-between">
                 <span>GST/Tax ({config.taxRate}%):</span>
-                <span>{config.currency} {tax}</span>
+                <span>{config.currency} {printedBill?.tax}</span>
               </div>
               <div className="flex justify-between font-bold text-sm pt-1 border-t border-black">
                 <span>Grand Total:</span>
-                <span>{config.currency} {grandTotal}</span>
+                <span>{config.currency} {printedBill?.grandTotal}</span>
               </div>
             </div>
             <div className="text-center pt-3 border-t border-dashed border-black mt-2">
