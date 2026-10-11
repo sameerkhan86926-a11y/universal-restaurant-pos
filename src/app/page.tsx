@@ -28,10 +28,11 @@ import {
   Download,
   Upload,
   UserCheck,
-  PauseCircle,
-  PlayCircle,
   Percent,
   Calendar,
+  Edit,
+  RotateCcw,
+  X,
 } from "lucide-react";
 
 // ================= TYPES & INTERFACES =================
@@ -49,8 +50,7 @@ export interface MenuItem {
   basePrice: number;
   isVeg: boolean;
   variants?: ItemVariant[];
-  addons?: { name: string; price: number }[];
-  recipe?: { ingredientId: string; qty: number }[]; // For auto-inventory deduction
+  recipe?: { ingredientId: string; qty: number }[];
 }
 
 export interface CartItem {
@@ -60,7 +60,6 @@ export interface CartItem {
   variantName?: string;
   price: number;
   qty: number;
-  selectedAddons?: string[];
   notes?: string;
 }
 
@@ -71,7 +70,6 @@ export interface TableInfo {
   status: "AVAILABLE" | "OCCUPIED" | "BILLED" | "CLEANING";
   occupiedSince?: string;
   activeCart: CartItem[];
-  heldOrder?: CartItem[];
   customerName?: string;
   customerPhone?: string;
 }
@@ -109,7 +107,7 @@ export interface CustomerProfile {
   name: string;
   totalSpent: number;
   visits: number;
-  creditBalance: number; // Udhar
+  creditBalance: number;
 }
 
 export interface SettledInvoice {
@@ -139,128 +137,59 @@ export interface RestaurantBranding {
   fssaiNumber: string;
   upiId: string;
   currency: string;
-  taxRate: number; // e.g. 5 for 2.5% CGST + 2.5% SGST
+  taxRate: number;
   primaryColor: string;
   secondaryColor: string;
   footerNote: string;
 }
 
-// ================= DEFAULT SYSTEM DATA =================
-const defaultBranding: RestaurantBranding = {
-  name: "The Royal Crown Bistro & Cafe",
-  tagline: "Fine Dine & Artisan Coffee",
-  address: "Plot 42, Metro Commercial Hub, New Delhi",
+// ================= DEFAULT FALLBACKS =================
+const initialBranding: RestaurantBranding = {
+  name: "My Restaurant & Cafe",
+  tagline: "Fresh, Hot & Authentic",
+  address: "Main Market Road, City Center",
   phone: "+91 98765 43210",
   gstNumber: "07AAAAA0000A1Z5",
   fssaiNumber: "10020011000456",
-  upiId: "royalbistro@upi",
+  upiId: "restaurant@upi",
   currency: "₹",
   taxRate: 5,
   primaryColor: "#e11d48",
   secondaryColor: "#0f172a",
-  footerNote: "GST Registered. Thank you for dining with us!",
+  footerNote: "GST Registered. Thank you for your visit!",
 };
 
-const defaultTables: TableInfo[] = [
-  { id: "t1", name: "Table 1 (Window)", capacity: 2, status: "AVAILABLE", activeCart: [] },
-  { id: "t2", name: "Table 2 (Booth)", capacity: 4, status: "AVAILABLE", activeCart: [] },
-  { id: "t3", name: "Table 3 (Family)", capacity: 6, status: "AVAILABLE", activeCart: [] },
-  { id: "t4", name: "Table 4 (Center)", capacity: 4, status: "AVAILABLE", activeCart: [] },
-  { id: "t5", name: "Table 5 (Terrace)", capacity: 2, status: "AVAILABLE", activeCart: [] },
-  { id: "t6", name: "Table 6 (VIP Lounge)", capacity: 8, status: "AVAILABLE", activeCart: [] },
-  { id: "t7", name: "Parcel Counter 1", capacity: 1, status: "AVAILABLE", activeCart: [] },
-  { id: "t8", name: "Parcel Counter 2", capacity: 1, status: "AVAILABLE", activeCart: [] },
-];
-
-const defaultInventory: InventoryItem[] = [
-  { id: "inv-1", name: "Paneer (Fresh)", unit: "kg", currentStock: 8.5, minStockLevel: 3.0, costPerUnit: 340 },
-  { id: "inv-2", name: "Chicken Breast", unit: "kg", currentStock: 12.0, minStockLevel: 5.0, costPerUnit: 220 },
-  { id: "inv-3", name: "Basmati Rice", unit: "kg", currentStock: 25.0, minStockLevel: 10.0, costPerUnit: 90 },
-  { id: "inv-4", name: "Cooking Oil / Ghee", unit: "l", currentStock: 14.0, minStockLevel: 5.0, costPerUnit: 140 },
-  { id: "inv-5", name: "Coffee Beans", unit: "kg", currentStock: 1.8, minStockLevel: 2.0, costPerUnit: 850 },
-  { id: "inv-6", name: "Full Cream Milk", unit: "l", currentStock: 6.0, minStockLevel: 10.0, costPerUnit: 64 },
-];
-
-const defaultMenu: MenuItem[] = [
-  {
-    id: "m1",
-    name: "Butter Paneer Masala",
-    category: "Main Course",
-    basePrice: 260,
-    isVeg: true,
-    variants: [
-      { name: "Half", price: 160 },
-      { name: "Full", price: 260 },
-    ],
-    addons: [{ name: "Extra Butter Cube", price: 25 }],
-    recipe: [{ ingredientId: "inv-1", qty: 0.2 }],
-  },
-  {
-    id: "m2",
-    name: "Royal Chicken Dum Biryani",
-    category: "Main Course",
-    basePrice: 320,
-    isVeg: false,
-    variants: [
-      { name: "Single Pot", price: 220 },
-      { name: "Family Handi", price: 420 },
-    ],
-    addons: [{ name: "Extra Salan", price: 30 }, { name: "Boiled Egg (2)", price: 40 }],
-    recipe: [{ ingredientId: "inv-2", qty: 0.25 }, { ingredientId: "inv-3", qty: 0.2 }],
-  },
-  {
-    id: "m3",
-    name: "Crispy Cheese Burger",
-    category: "Fast Food",
-    basePrice: 139,
-    isVeg: true,
-    addons: [{ name: "Extra Cheddar Slice", price: 30 }, { name: "French Fries Combo", price: 60 }],
-  },
-  {
-    id: "m4",
-    name: "Artisan Cappuccino",
-    category: "Beverages",
-    basePrice: 120,
-    isVeg: true,
-    variants: [
-      { name: "Regular", price: 120 },
-      { name: "Large Grande", price: 160 },
-    ],
-    addons: [{ name: "Hazelnut Syrup", price: 35 }, { name: "Extra Espresso Shot", price: 40 }],
-    recipe: [{ ingredientId: "inv-5", qty: 0.02 }, { ingredientId: "inv-6", qty: 0.2 }],
-  },
-  {
-    id: "m5",
-    name: "Sizzling Brownie with Ice Cream",
-    category: "Desserts",
-    basePrice: 150,
-    isVeg: true,
-  },
-];
-
-// ================= MAIN SYSTEM COMPONENT =================
 export default function UltimateRestaurantPOS() {
   const [isClient, setIsClient] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>("OWNER");
   const [activeModule, setActiveModule] = useState<
-    "DASHBOARD" | "POS" | "TABLES" | "KDS" | "INVENTORY" | "EXPENSES" | "CUSTOMERS" | "AUDIT" | "SETTINGS"
+    "POS" | "DASHBOARD" | "MENU_MGMT" | "TABLES" | "KDS" | "INVENTORY" | "EXPENSES" | "CUSTOMERS" | "AUDIT" | "SETTINGS"
   >("POS");
 
-  // State collections
-  const [branding, setBranding] = useState<RestaurantBranding>(defaultBranding);
-  const [tables, setTables] = useState<TableInfo[]>(defaultTables);
-  const [menu, setMenu] = useState<MenuItem[]>(defaultMenu);
-  const [inventory, setInventory] = useState<InventoryItem[]>(defaultInventory);
+  // Core Data
+  const [branding, setBranding] = useState<RestaurantBranding>(initialBranding);
+  const [tables, setTables] = useState<TableInfo[]>([
+    { id: "t1", name: "Table 1", capacity: 2, status: "AVAILABLE", activeCart: [] },
+    { id: "t2", name: "Table 2", capacity: 4, status: "AVAILABLE", activeCart: [] },
+    { id: "t3", name: "Table 3", capacity: 6, status: "AVAILABLE", activeCart: [] },
+    { id: "t4", name: "Parcel Counter", capacity: 1, status: "AVAILABLE", activeCart: [] },
+  ]);
+  const [menu, setMenu] = useState<MenuItem[]>([
+    { id: "m1", name: "Paneer Butter Masala", category: "Main Course", basePrice: 240, isVeg: true },
+    { id: "m2", name: "Crispy Veg Burger", category: "Fast Food", basePrice: 99, isVeg: true },
+    { id: "m3", name: "Cold Coffee", category: "Beverages", basePrice: 80, isVeg: true },
+  ]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([
+    { id: "inv-1", name: "Paneer", unit: "kg", currentStock: 5.0, minStockLevel: 2.0, costPerUnit: 340 },
+    { id: "inv-2", name: "Milk", unit: "l", currentStock: 8.0, minStockLevel: 3.0, costPerUnit: 64 },
+  ]);
   const [activeKOTs, setActiveKOTs] = useState<KOTTicket[]>([]);
   const [kotSequence, setKotSequence] = useState<number>(101);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
-  const [customers, setCustomers] = useState<CustomerProfile[]>([
-    { phone: "9876500001", name: "Rahul Sharma", totalSpent: 4200, visits: 6, creditBalance: 0 },
-    { phone: "9876500002", name: "Ananya Gupta", totalSpent: 1850, visits: 2, creditBalance: 350 },
-  ]);
+  const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [invoices, setInvoices] = useState<SettledInvoice[]>([]);
 
-  // POS Interaction States
+  // POS State
   const [selectedTableId, setSelectedTableId] = useState<string>("t1");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -272,11 +201,36 @@ export default function UltimateRestaurantPOS() {
   const [customerPhoneInput, setCustomerPhoneInput] = useState("");
   const [customerNameInput, setCustomerNameInput] = useState("");
 
-  // Print Snapshot State
+  // Modals & Forms State
+  const [showAddMenuModal, setShowAddMenuModal] = useState(false);
+  const [showAddTableModal, setShowAddTableModal] = useState(false);
+  const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
+
+  // New Menu Item Form States
+  const [newMenuName, setNewMenuName] = useState("");
+  const [newMenuCategory, setNewMenuCategory] = useState("Main Course");
+  const [newMenuPrice, setNewMenuPrice] = useState("");
+  const [newMenuIsVeg, setNewMenuIsVeg] = useState(true);
+  const [newMenuHasVariants, setNewMenuHasVariants] = useState(false);
+  const [variantHalfPrice, setVariantHalfPrice] = useState("");
+  const [variantFullPrice, setVariantFullPrice] = useState("");
+
+  // New Table Form States
+  const [newTableName, setNewTableName] = useState("");
+  const [newTableCapacity, setNewTableCapacity] = useState("4");
+
+  // New Inventory Form States
+  const [newInvName, setNewInvName] = useState("");
+  const [newInvUnit, setNewInvUnit] = useState<"kg" | "g" | "l" | "ml" | "pcs">("kg");
+  const [newInvStock, setNewInvStock] = useState("");
+  const [newInvMinStock, setNewInvMinStock] = useState("");
+  const [newInvCost, setNewInvCost] = useState("");
+
+  // Print Data
   const [printInvoiceData, setPrintInvoiceData] = useState<SettledInvoice | null>(null);
   const [printKOTData, setPrintKOTData] = useState<KOTTicket | null>(null);
 
-  // LocalStorage Sync
+  // Load from LocalStorage
   useEffect(() => {
     setIsClient(true);
     const getSaved = (k: string) => localStorage.getItem(k);
@@ -295,9 +249,23 @@ export default function UltimateRestaurantPOS() {
     localStorage.setItem(key, JSON.stringify(data));
   };
 
-  // Active Selected Table & Cart
+  // Helper to Reset all demo data to clean slate
+  const handleResetData = () => {
+    if (confirm("Are you sure you want to reset demo data? All records will be cleared for a fresh start.")) {
+      localStorage.clear();
+      window.location.reload();
+    }
+  };
+
+  // Active Table
   const currentTable = useMemo(() => {
-    return tables.find((t) => t.id === selectedTableId) || tables[0];
+    return tables.find((t) => t.id === selectedTableId) || tables[0] || {
+      id: "t_def",
+      name: "Table 1",
+      capacity: 4,
+      status: "AVAILABLE",
+      activeCart: [],
+    };
   }, [tables, selectedTableId]);
 
   const updateCurrentTableCart = (newCart: CartItem[]) => {
@@ -318,8 +286,7 @@ export default function UltimateRestaurantPOS() {
     saveToDisk("rms_tables", updated);
   };
 
-  // Add Item to Cart (Handles Variants & Add-ons)
-  const addItemToCart = (item: MenuItem, variant?: ItemVariant, addon?: { name: string; price: number }) => {
+  const addItemToCart = (item: MenuItem, variant?: ItemVariant) => {
     const price = variant ? variant.price : item.basePrice;
     const variantName = variant ? variant.name : undefined;
     const cartId = `${item.id}-${variantName || "base"}`;
@@ -337,7 +304,6 @@ export default function UltimateRestaurantPOS() {
         variantName,
         price,
         qty: 1,
-        selectedAddons: addon ? [addon.name] : [],
       });
     }
 
@@ -358,7 +324,7 @@ export default function UltimateRestaurantPOS() {
     updateCurrentTableCart(updatedCart);
   };
 
-  // Bill Calculations
+  // Calculations
   const cartSubtotal = useMemo(() => {
     return currentTable.activeCart.reduce((sum, item) => sum + item.price * item.qty, 0);
   }, [currentTable.activeCart]);
@@ -374,14 +340,13 @@ export default function UltimateRestaurantPOS() {
   const sgstAmount = Number(((taxableAmount * halfTaxRate) / 100).toFixed(2));
   const finalPayable = Math.round(taxableAmount + cgstAmount + sgstAmount);
 
-  // Dynamic UPI URL
   const upiQrUrl = useMemo(() => {
     if (!branding.upiId || finalPayable <= 0) return "";
     const upiUri = `upi://pay?pa=${encodeURIComponent(branding.upiId)}&pn=${encodeURIComponent(branding.name)}&am=${finalPayable}&cu=INR`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUri)}`;
   }, [branding.upiId, branding.name, finalPayable]);
 
-  // Dispatch Kitchen Order Ticket (KOT)
+  // Dispatch KOT
   const dispatchKOT = () => {
     if (currentTable.activeCart.length === 0) return;
 
@@ -410,13 +375,13 @@ export default function UltimateRestaurantPOS() {
     setTimeout(() => window.print(), 150);
   };
 
-  // Settle Bill & Auto-Deduct Inventory
+  // Settle Bill
   const settleBill = () => {
     if (cartSubtotal === 0) return;
 
     const invoice: SettledInvoice = {
       id: `INV-${Date.now().toString().slice(-6)}`,
-      invoiceNo: `RCB/${new Date().getFullYear()}/${(invoices.length + 1).toString().padStart(4, "0")}`,
+      invoiceNo: `INV/${new Date().getFullYear()}/${(invoices.length + 1).toString().padStart(4, "0")}`,
       date: new Date().toLocaleString(),
       table: currentTable.name,
       customerName: customerNameInput || currentTable.customerName || "Walk-in Guest",
@@ -495,7 +460,6 @@ export default function UltimateRestaurantPOS() {
     setTables(updatedTables);
     saveToDisk("rms_tables", updatedTables);
 
-    // Trigger Print
     setPrintInvoiceData(invoice);
     setPrintKOTData(null);
     setDiscountPercent(0);
@@ -506,7 +470,7 @@ export default function UltimateRestaurantPOS() {
     setTimeout(() => window.print(), 150);
   };
 
-  // Calculations for Executive Dashboard
+  // Dashboard Stats
   const dashboardStats = useMemo(() => {
     const totalSales = invoices.reduce((s, i) => s + i.grandTotal, 0);
     const totalExpense = expenses.reduce((s, e) => s + e.amount, 0);
@@ -527,7 +491,7 @@ export default function UltimateRestaurantPOS() {
       cardSales,
       creditSales,
       occupiedTables,
-      tableOccupancyRate: Math.round((occupiedTables / tables.length) * 100),
+      tableOccupancyRate: tables.length > 0 ? Math.round((occupiedTables / tables.length) * 100) : 0,
       lowStockCount,
     };
   }, [invoices, expenses, tables, inventory]);
@@ -544,12 +508,114 @@ export default function UltimateRestaurantPOS() {
     });
   }, [menu, selectedCategory, searchQuery]);
 
+  // ================= ACTION HANDLERS =================
+  const handleCreateMenuItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMenuName || !newMenuPrice) return;
+
+    const newItem: MenuItem = {
+      id: `m_${Date.now()}`,
+      name: newMenuName,
+      category: newMenuCategory,
+      basePrice: parseFloat(newMenuPrice),
+      isVeg: newMenuIsVeg,
+      variants: newMenuHasVariants && variantHalfPrice && variantFullPrice
+        ? [
+            { name: "Half", price: parseFloat(variantHalfPrice) },
+            { name: "Full", price: parseFloat(variantFullPrice) },
+          ]
+        : undefined,
+    };
+
+    const updated = [newItem, ...menu];
+    setMenu(updated);
+    saveToDisk("rms_menu", updated);
+
+    // Reset Form
+    setNewMenuName("");
+    setNewMenuPrice("");
+    setNewMenuHasVariants(false);
+    setVariantHalfPrice("");
+    setVariantFullPrice("");
+    setShowAddMenuModal(false);
+    alert("New Menu Item added successfully!");
+  };
+
+  const handleDeleteMenuItem = (id: string) => {
+    if (confirm("Delete this menu dish permanently?")) {
+      const updated = menu.filter((m) => m.id !== id);
+      setMenu(updated);
+      saveToDisk("rms_menu", updated);
+    }
+  };
+
+  const handleCreateTable = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTableName) return;
+    const newTbl: TableInfo = {
+      id: `tbl_${Date.now()}`,
+      name: newTableName,
+      capacity: parseInt(newTableCapacity) || 4,
+      status: "AVAILABLE",
+      activeCart: [],
+    };
+    const updated = [...tables, newTbl];
+    setTables(updated);
+    saveToDisk("rms_tables", updated);
+    setNewTableName("");
+    setShowAddTableModal(false);
+    alert("New Table added successfully!");
+  };
+
+  const handleDeleteTable = (id: string) => {
+    if (tables.length <= 1) {
+      alert("At least one table or counter must exist!");
+      return;
+    }
+    if (confirm("Delete this table?")) {
+      const updated = tables.filter((t) => t.id !== id);
+      setTables(updated);
+      saveToDisk("rms_tables", updated);
+      if (selectedTableId === id) setSelectedTableId(updated[0].id);
+    }
+  };
+
+  const handleCreateInventoryItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInvName || !newInvStock) return;
+    const newInv: InventoryItem = {
+      id: `inv_${Date.now()}`,
+      name: newInvName,
+      unit: newInvUnit,
+      currentStock: parseFloat(newInvStock) || 0,
+      minStockLevel: parseFloat(newInvMinStock) || 1,
+      costPerUnit: parseFloat(newInvCost) || 0,
+    };
+    const updated = [...inventory, newInv];
+    setInventory(updated);
+    saveToDisk("rms_inventory", updated);
+    setNewInvName("");
+    setNewInvStock("");
+    setNewInvMinStock("");
+    setNewInvCost("");
+    setShowAddInventoryModal(false);
+    alert("New Raw Material Ingredient added!");
+  };
+
+  const handleDeleteInventory = (id: string) => {
+    if (confirm("Delete this inventory item?")) {
+      const updated = inventory.filter((i) => i.id !== id);
+      setInventory(updated);
+      saveToDisk("rms_inventory", updated);
+    }
+  };
+
   if (!isClient) return null;
 
   return (
     <>
       {/* =========================================================================
-          PRINT ONLY THERMAL SLIP ENGINE (Invoice & KOT)
+          THERMAL PRINTER RECEIPT / KOT
       ========================================================================= */}
       <div id="thermal-receipt" className="hidden print:block p-2 max-w-[80mm] mx-auto text-black font-mono text-[11px] leading-tight">
         {printInvoiceData && (
@@ -576,7 +642,6 @@ export default function UltimateRestaurantPOS() {
               </div>
             </div>
 
-            {/* Itemized Table */}
             <table className="w-full text-left text-[10px] pt-1">
               <thead>
                 <tr className="border-b border-black font-bold">
@@ -600,7 +665,6 @@ export default function UltimateRestaurantPOS() {
               </tbody>
             </table>
 
-            {/* Calculations */}
             <div className="pt-1.5 space-y-0.5 text-[10px] border-t border-black">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
@@ -626,7 +690,6 @@ export default function UltimateRestaurantPOS() {
               </div>
             </div>
 
-            {/* Dynamic UPI QR Code on Bill */}
             {branding.upiId && (
               <div className="text-center pt-2 border-t border-dashed border-black mt-2">
                 <p className="text-[9px] font-bold">Scan to Pay via PhonePe / GPay / Paytm</p>
@@ -675,10 +738,258 @@ export default function UltimateRestaurantPOS() {
       </div>
 
       {/* =========================================================================
+          MODALS: ADD MENU DISH / ADD TABLE / ADD INVENTORY
+      ========================================================================= */}
+      {/* 1. Add Menu Dish Modal */}
+      {showAddMenuModal && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-black text-lg text-slate-900">Add New Menu Dish</h3>
+              <button onClick={() => setShowAddMenuModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateMenuItem} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Item / Dish Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Masala Dosa, Cold Coffee, Veg Pizza"
+                  value={newMenuName}
+                  onChange={(e) => setNewMenuName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Category</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Fast Food, Beverages"
+                    value={newMenuCategory}
+                    onChange={(e) => setNewMenuCategory(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Dietary Type</label>
+                  <select
+                    value={newMenuIsVeg ? "true" : "false"}
+                    onChange={(e) => setNewMenuIsVeg(e.target.value === "true")}
+                    className="w-full px-3 py-2 border rounded-xl bg-white"
+                  >
+                    <option value="true">Pure Veg (Green)</option>
+                    <option value="false">Non-Veg (Red)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Base Selling Price (₹)</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 150"
+                  value={newMenuPrice}
+                  onChange={(e) => setNewMenuPrice(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              {/* Sizes / Variants Toggle */}
+              <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
+                <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newMenuHasVariants}
+                    onChange={(e) => setNewMenuHasVariants(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span>Has Sizes / Portions (Half & Full)?</span>
+                </label>
+
+                {newMenuHasVariants && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-[10px] text-slate-500 font-semibold">Half Price (₹)</span>
+                      <input
+                        type="number"
+                        placeholder="Half Price"
+                        value={variantHalfPrice}
+                        onChange={(e) => setVariantHalfPrice(e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-lg bg-white"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 font-semibold">Full Price (₹)</span>
+                      <input
+                        type="number"
+                        placeholder="Full Price"
+                        value={variantFullPrice}
+                        onChange={(e) => setVariantFullPrice(e.target.value)}
+                        className="w-full px-2 py-1.5 border rounded-lg bg-white"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
+              >
+                Save Dish to Menu
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Add Table Modal */}
+      {showAddTableModal && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-black text-lg text-slate-900">Add New Dining Table</h3>
+              <button onClick={() => setShowAddTableModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTable} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Table / Counter Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Table 5, Rooftop 1, Takeaway 2"
+                  value={newTableName}
+                  onChange={(e) => setNewTableName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Guest Seating Capacity</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="4"
+                  value={newTableCapacity}
+                  onChange={(e) => setNewTableCapacity(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
+              >
+                Create Table
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Add Raw Material Inventory Modal */}
+      {showAddInventoryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-black text-lg text-slate-900">Add Raw Material Ingredient</h3>
+              <button onClick={() => setShowAddInventoryModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateInventoryItem} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Ingredient Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Cooking Oil, Mozzarella Cheese, Basmati Rice"
+                  value={newInvName}
+                  onChange={(e) => setNewInvName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Unit of Measure</label>
+                  <select
+                    value={newInvUnit}
+                    onChange={(e) => setNewInvUnit(e.target.value as any)}
+                    className="w-full px-3 py-2 border rounded-xl bg-white"
+                  >
+                    <option value="kg">Kilogram (kg)</option>
+                    <option value="g">Gram (g)</option>
+                    <option value="l">Liter (l)</option>
+                    <option value="ml">Milliliter (ml)</option>
+                    <option value="pcs">Pieces (pcs)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Opening Stock</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="10"
+                    value={newInvStock}
+                    onChange={(e) => setNewInvStock(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Low Stock Warning Level</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="2"
+                    value={newInvMinStock}
+                    onChange={(e) => setNewInvMinStock(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Cost Per Unit (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="120"
+                    value={newInvCost}
+                    onChange={(e) => setNewInvCost(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
+              >
+                Add to Stock
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
           MAIN INTERACTIVE SAAS APPLICATION (SCREEN VIEW)
       ========================================================================= */}
       <div className="min-h-screen bg-slate-100 flex flex-col print:hidden font-sans text-slate-900">
-        {/* Top Executive Navigation Bar */}
+        {/* Header */}
         <header
           className="px-5 py-3 text-white flex justify-between items-center shadow-lg transition-colors"
           style={{ backgroundColor: branding.secondaryColor }}
@@ -693,20 +1004,28 @@ export default function UltimateRestaurantPOS() {
             </div>
           </div>
 
-          {/* Quick Role-Switcher (RBAC Simulation) */}
+          {/* Quick Actions & Role Switcher */}
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-white/70 font-semibold hidden md:inline">Logged In Role:</span>
+            <button
+              onClick={handleResetData}
+              title="Reset all demo data"
+              className="p-1.5 bg-white/10 hover:bg-red-500/80 rounded-lg text-white transition text-xs flex items-center gap-1 font-bold"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Reset Demo</span>
+            </button>
+
             <select
               value={currentUserRole}
               onChange={(e) => setCurrentUserRole(e.target.value as UserRole)}
               className="bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer"
             >
               <option value="OWNER" className="text-slate-900">Owner (Full Admin)</option>
-              <option value="MANAGER" className="text-slate-900">Restaurant Manager</option>
-              <option value="CASHIER" className="text-slate-900">Cashier Counter</option>
-              <option value="WAITER" className="text-slate-900">Waiter / Floor Staff</option>
-              <option value="CHEF" className="text-slate-900">Executive Chef (KDS)</option>
-              <option value="ACCOUNTANT" className="text-slate-900">Accountant (Ledger)</option>
+              <option value="MANAGER" className="text-slate-900">Manager</option>
+              <option value="CASHIER" className="text-slate-900">Cashier</option>
+              <option value="WAITER" className="text-slate-900">Waiter</option>
+              <option value="CHEF" className="text-slate-900">Chef (KDS)</option>
+              <option value="ACCOUNTANT" className="text-slate-900">Accountant</option>
             </select>
           </div>
         </header>
@@ -714,161 +1033,125 @@ export default function UltimateRestaurantPOS() {
         {/* Global Navigation Menu Tabs */}
         <nav className="bg-white border-b border-slate-200 px-4 md:px-6 flex gap-1 overflow-x-auto text-xs font-bold">
           {[
-            { id: "POS", label: "POS Billing", icon: ShoppingBag, roles: ["OWNER", "MANAGER", "CASHIER", "WAITER"] },
-            { id: "DASHBOARD", label: "Executive Analytics", icon: LayoutDashboard, roles: ["OWNER", "MANAGER", "ACCOUNTANT"] },
-            { id: "TABLES", label: "Digital Floor Plan", icon: UtensilsCrossed, roles: ["OWNER", "MANAGER", "WAITER", "CASHIER"] },
-            { id: "KDS", label: "Kitchen Display (KDS)", icon: ChefHat, roles: ["OWNER", "MANAGER", "CHEF"] },
-            { id: "INVENTORY", label: "Recipe & Inventory", icon: Boxes, roles: ["OWNER", "MANAGER"] },
-            { id: "EXPENSES", label: "Expenses & P&L", icon: Wallet, roles: ["OWNER", "MANAGER", "ACCOUNTANT"] },
-            { id: "CUSTOMERS", label: "CRM & Udhar Ledger", icon: Users, roles: ["OWNER", "MANAGER", "CASHIER"] },
-            { id: "AUDIT", label: "Invoices Audit", icon: Receipt, roles: ["OWNER", "MANAGER", "CASHIER", "ACCOUNTANT"] },
-            { id: "SETTINGS", label: "Branding & GST", icon: Settings, roles: ["OWNER"] },
-          ]
-            .filter((tab) => tab.roles.includes(currentUserRole))
-            .map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeModule === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveModule(tab.id as any)}
-                  className={`py-3 px-3.5 flex items-center gap-2 border-b-2 whitespace-nowrap transition ${
-                    isActive
-                      ? "border-rose-600 text-rose-600 font-extrabold"
-                      : "border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300"
-                  }`}
-                  style={{
-                    borderColor: isActive ? branding.primaryColor : undefined,
-                    color: isActive ? branding.primaryColor : undefined,
-                  }}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+            { id: "POS", label: "POS Billing", icon: ShoppingBag },
+            { id: "MENU_MGMT", label: "Menu Catalog & Add Items", icon: Edit },
+            { id: "TABLES", label: "Tables Floor Plan", icon: UtensilsCrossed },
+            { id: "KDS", label: "Kitchen KDS", icon: ChefHat },
+            { id: "INVENTORY", label: "Stock & Ingredients", icon: Boxes },
+            { id: "DASHBOARD", label: "Executive Analytics", icon: LayoutDashboard },
+            { id: "EXPENSES", label: "Expenses & P&L", icon: Wallet },
+            { id: "CUSTOMERS", label: "CRM & Udhar Ledger", icon: Users },
+            { id: "AUDIT", label: "Invoices Audit", icon: Receipt },
+            { id: "SETTINGS", label: "Branding & GST", icon: Settings },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeModule === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveModule(tab.id as any)}
+                className={`py-3 px-3.5 flex items-center gap-2 border-b-2 whitespace-nowrap transition ${
+                  isActive
+                    ? "border-rose-600 text-rose-600 font-extrabold"
+                    : "border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300"
+                }`}
+                style={{
+                  borderColor: isActive ? branding.primaryColor : undefined,
+                  color: isActive ? branding.primaryColor : undefined,
+                }}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         {/* =========================================================================
-            MODULE 1: EXECUTIVE ANALYTICS DASHBOARD
+            MODULE: MENU CATALOG & FULL EDITABLE MANAGER
         ========================================================================= */}
-        {activeModule === "DASHBOARD" && (
+        {activeModule === "MENU_MGMT" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
               <div>
-                <h2 className="text-xl font-black text-slate-900">Executive Real-time Performance</h2>
-                <p className="text-xs text-slate-500">Live consolidated financial reports & operations status</p>
+                <h2 className="text-xl font-black text-slate-900">Complete Menu Management</h2>
+                <p className="text-xs text-slate-500">Create new dishes, configure half/full portions, and manage prices</p>
               </div>
-              <div className="flex gap-2 text-xs">
-                <span className="px-3 py-1.5 bg-emerald-50 text-emerald-800 rounded-lg font-bold border border-emerald-200">
-                  Net Estimated Margin: {dashboardStats.totalSales > 0 ? Math.round((dashboardStats.netProfit / dashboardStats.totalSales) * 100) : 0}%
-                </span>
-              </div>
+              <button
+                onClick={() => setShowAddMenuModal(true)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-800 transition"
+              >
+                <Plus className="w-4 h-4" /> + Add New Menu Dish
+              </button>
             </div>
 
-            {/* KPI Metrics Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Gross Sales Revenue</span>
-                <p className="text-2xl font-black text-slate-900 mt-1">{branding.currency} {dashboardStats.totalSales}</p>
-                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
-                  <ArrowUpRight className="w-3 h-3" /> {dashboardStats.totalOrders} Settled Orders
-                </span>
-              </div>
-
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Total Expenses</span>
-                <p className="text-2xl font-black text-rose-600 mt-1">{branding.currency} {dashboardStats.totalExpense}</p>
-                <span className="text-[10px] text-slate-500 font-medium mt-1">Rent, stock & salaries</span>
-              </div>
-
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Estimated Net Profit</span>
-                <p className={`text-2xl font-black mt-1 ${dashboardStats.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                  {branding.currency} {dashboardStats.netProfit}
-                </p>
-                <span className="text-[10px] text-slate-500 font-medium mt-1">Gross sales minus operational costs</span>
-              </div>
-
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Floor Table Occupancy</span>
-                <p className="text-2xl font-black text-blue-600 mt-1">{dashboardStats.tableOccupancyRate}%</p>
-                <span className="text-[10px] text-slate-500 font-medium mt-1">{dashboardStats.occupiedTables} of {tables.length} tables dining</span>
-              </div>
-            </div>
-
-            {/* Payment Modes Split & Alerts */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Payment Collections Breakdown</h3>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Banknote className="w-4 h-4 text-emerald-600" /> Cash Drawer:</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cashSales}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><QrCode className="w-4 h-4 text-blue-600" /> UPI Online:</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.upiSales}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><CreditCard className="w-4 h-4 text-purple-600" /> Debit / Credit Cards:</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cardSales}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Users className="w-4 h-4 text-amber-600" /> Customer Credit (Udhar):</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.creditSales}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Low Stock Warnings */}
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 md:col-span-2 space-y-3">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" /> Critical Low Stock Ingredients
-                  </h3>
-                  <button onClick={() => setActiveModule("INVENTORY")} className="text-xs text-rose-600 font-bold hover:underline">
-                    Manage Inventory ➔
-                  </button>
-                </div>
-                {dashboardStats.lowStockCount === 0 ? (
-                  <p className="text-xs text-slate-400 py-6 text-center">All raw materials are well above minimum thresholds.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {inventory
-                      .filter((i) => i.currentStock <= i.minStockLevel)
-                      .map((item) => (
-                        <div key={item.id} className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex justify-between items-center text-xs">
-                          <div>
-                            <p className="font-bold text-amber-900">{item.name}</p>
-                            <p className="text-[10px] text-amber-700">Min Threshold: {item.minStockLevel} {item.unit}</p>
-                          </div>
-                          <span className="px-2 py-1 bg-amber-200 text-amber-900 font-black rounded-lg">
-                            {item.currentStock} {item.unit}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
+                      <th className="py-2">Dish Name</th>
+                      <th className="py-2">Category</th>
+                      <th className="py-2">Dietary</th>
+                      <th className="py-2">Base Price</th>
+                      <th className="py-2">Variants (Sizes)</th>
+                      <th className="py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {menu.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                        <td className="py-3 text-slate-600">{item.category}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.isVeg ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                            {item.isVeg ? "Pure Veg" : "Non-Veg"}
                           </span>
-                        </div>
-                      ))}
-                  </div>
-                )}
+                        </td>
+                        <td className="py-3 font-black text-slate-900">{branding.currency} {item.basePrice}</td>
+                        <td className="py-3 text-slate-600">
+                          {item.variants ? item.variants.map((v) => `${v.name} (₹${v.price})`).join(", ") : "Single Size"}
+                        </td>
+                        <td className="py-3 text-right">
+                          <button
+                            onClick={() => handleDeleteMenuItem(item.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50"
+                            title="Delete Item"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </main>
         )}
 
         {/* =========================================================================
-            MODULE 2: POWER POS BILLING SYSTEM
+            MODULE: POS BILLING SYSTEM
         ========================================================================= */}
         {activeModule === "POS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left 7 Columns: Categories, Search & Items Catalog */}
+            {/* Left 7 Columns: Items & Catalog */}
             <div className="lg:col-span-7 space-y-4">
-              {/* Quick Table Switch Bar */}
+              {/* Tables Switch Bar */}
               <div className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1">
                     <UtensilsCrossed className="w-3.5 h-3.5" /> Dining Table / Takeaway
                   </span>
-                  <span className="text-xs font-black text-rose-600">{currentTable.name} Active</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowAddTableModal(true)}
+                      className="text-xs text-rose-600 font-bold hover:underline flex items-center gap-0.5"
+                    >
+                      <Plus className="w-3 h-3" /> Add Table
+                    </button>
+                    <span className="text-xs font-black text-slate-800">| {currentTable.name} Active</span>
+                  </div>
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {tables.map((tbl) => {
@@ -893,17 +1176,25 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Search & Category Pills */}
+              {/* Search & Categories */}
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    placeholder="Search dishes by name (e.g. Biryani, Burger, Coffee)..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-slate-900"
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Search dishes by name..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs border rounded-xl focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setShowAddMenuModal(true)}
+                    className="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> New Dish
+                  </button>
                 </div>
 
                 <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -923,7 +1214,7 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Items Grid with Variants */}
+              {/* Items Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[580px] overflow-y-auto pr-1">
                 {filteredMenuItems.map((item) => (
                   <div
@@ -946,7 +1237,6 @@ export default function UltimateRestaurantPOS() {
                       </p>
                     </div>
 
-                    {/* Variant Buttons OR Base Add Button */}
                     <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
                       {item.variants ? (
                         item.variants.map((v) => (
@@ -973,7 +1263,7 @@ export default function UltimateRestaurantPOS() {
               </div>
             </div>
 
-            {/* Right 5 Columns: Active Cart & Multi-Payment Settle */}
+            {/* Right 5 Columns: Active Terminal Bill */}
             <div className="lg:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
               <div className="space-y-4">
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -991,11 +1281,11 @@ export default function UltimateRestaurantPOS() {
                   )}
                 </div>
 
-                {/* Customer Details Inputs */}
+                {/* Customer CRM inputs */}
                 <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <input
                     type="tel"
-                    placeholder="Customer Mobile (CRM)"
+                    placeholder="Mobile (CRM)"
                     value={customerPhoneInput}
                     onChange={(e) => setCustomerPhoneInput(e.target.value)}
                     className="px-2.5 py-1.5 border rounded-lg text-xs bg-white"
@@ -1009,7 +1299,7 @@ export default function UltimateRestaurantPOS() {
                   />
                 </div>
 
-                {/* Cart Items List */}
+                {/* Cart list */}
                 <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto pr-1">
                   {currentTable.activeCart.length === 0 ? (
                     <p className="text-xs text-slate-400 py-12 text-center">No items added to {currentTable.name}.</p>
@@ -1046,9 +1336,9 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Summary, Discounts, Taxes & Settlement */}
+              {/* Settlement Footer */}
               <div className="pt-3 border-t border-slate-200 space-y-2 text-xs">
-                {/* Discount Inputs */}
+                {/* Discount */}
                 <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl">
                   <span className="text-[10px] font-bold text-slate-500 flex items-center gap-0.5"><Percent className="w-3 h-3" /> Discount:</span>
                   <input
@@ -1081,23 +1371,23 @@ export default function UltimateRestaurantPOS() {
                   </div>
                   {discountAmount > 0 && (
                     <div className="flex justify-between text-red-600 font-semibold">
-                      <span>Discount Applied:</span>
+                      <span>Discount:</span>
                       <span>- {branding.currency} {discountAmount}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span>GST ({branding.taxRate}% Total):</span>
+                    <span>GST ({branding.taxRate}%):</span>
                     <span>{branding.currency} {cgstAmount + sgstAmount}</span>
                   </div>
                   <div className="flex justify-between text-base font-black text-slate-900 pt-1 border-t">
-                    <span>Final Amount:</span>
+                    <span>Net Payable:</span>
                     <span>{branding.currency} {finalPayable}</span>
                   </div>
                 </div>
 
-                {/* Multi-Payment Mode Selector */}
+                {/* Modes */}
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Select Payment Mode</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Payment Method</span>
                   <div className="grid grid-cols-5 gap-1 text-[11px] font-bold">
                     {(["Cash", "UPI", "Card", "Credit", "Split"] as const).map((m) => (
                       <button
@@ -1115,33 +1405,26 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 </div>
 
-                {/* Split Payment Form */}
+                {/* Split fields */}
                 {activePaymentMode === "Split" && (
                   <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-xl">
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500">Cash Part</label>
-                      <input
-                        type="number"
-                        placeholder="₹ Cash"
-                        value={splitCashAmount}
-                        onChange={(e) => setSplitCashAmount(e.target.value)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-slate-500">Online Part</label>
-                      <input
-                        type="number"
-                        placeholder="₹ Online"
-                        value={splitOnlineAmount}
-                        onChange={(e) => setSplitOnlineAmount(e.target.value)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
+                    <input
+                      type="number"
+                      placeholder="₹ Cash Part"
+                      value={splitCashAmount}
+                      onChange={(e) => setSplitCashAmount(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-xs"
+                    />
+                    <input
+                      type="number"
+                      placeholder="₹ Online Part"
+                      value={splitOnlineAmount}
+                      onChange={(e) => setSplitOnlineAmount(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-xs"
+                    />
                   </div>
                 )}
 
-                {/* Action Buttons: KOT & Settle */}
                 <div className="grid grid-cols-2 gap-2 pt-2">
                   <button
                     onClick={dispatchKOT}
@@ -1165,23 +1448,21 @@ export default function UltimateRestaurantPOS() {
         )}
 
         {/* =========================================================================
-            MODULE 3: DIGITAL FLOOR PLAN & TABLE MANAGEMENT
+            MODULE: TABLES & FLOOR PLAN
         ========================================================================= */}
         {activeModule === "TABLES" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
               <div>
-                <h2 className="text-xl font-black text-slate-900">Interactive Digital Floor Plan</h2>
-                <p className="text-xs text-slate-500">Live occupancy tracking, guest seated timers and capacity</p>
+                <h2 className="text-xl font-black text-slate-900">Floor Tables & Layout</h2>
+                <p className="text-xs text-slate-500">Add, remove, and monitor live occupancy</p>
               </div>
-              <div className="flex gap-2 text-xs font-bold">
-                <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" /> Available
-                </span>
-                <span className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Occupied
-                </span>
-              </div>
+              <button
+                onClick={() => setShowAddTableModal(true)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
+              >
+                <Plus className="w-4 h-4" /> Add New Table
+              </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1197,15 +1478,20 @@ export default function UltimateRestaurantPOS() {
                     <div>
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-extrabold text-base text-slate-900">{tbl.name}</h3>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            isOccupied ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-                          }`}
-                        >
-                          {tbl.status}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isOccupied ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+                            }`}
+                          >
+                            {tbl.status}
+                          </span>
+                          <button onClick={() => handleDeleteTable(tbl.id)} className="text-slate-300 hover:text-red-500 p-0.5">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs text-slate-500">Capacity: {tbl.capacity} Persons</p>
+                      <p className="text-xs text-slate-500">Seating: {tbl.capacity} Persons</p>
                       {isOccupied && (
                         <div className="mt-3 p-2 bg-slate-50 rounded-xl space-y-1 text-xs">
                           <p className="text-slate-600 flex items-center gap-1">
@@ -1226,7 +1512,7 @@ export default function UltimateRestaurantPOS() {
                         }}
                         className="w-full py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition"
                       >
-                        {isOccupied ? "Manage Order / Bill" : "Punch New Dine-in Order"}
+                        {isOccupied ? "Manage Order / Bill" : "Punch Order"}
                       </button>
                     </div>
                   </div>
@@ -1237,7 +1523,7 @@ export default function UltimateRestaurantPOS() {
         )}
 
         {/* =========================================================================
-            MODULE 4: MULTI-STATION KITCHEN DISPLAY SYSTEM (KDS)
+            MODULE: KITCHEN DISPLAY SCREEN (KDS)
         ========================================================================= */}
         {activeModule === "KDS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
@@ -1257,7 +1543,7 @@ export default function UltimateRestaurantPOS() {
               <div className="bg-white rounded-2xl p-16 text-center border border-slate-200">
                 <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
                 <h3 className="text-base font-bold text-slate-800">No Pending Kitchen Orders!</h3>
-                <p className="text-xs text-slate-400 mt-1">Orders dispatched from POS will pop up here in real-time.</p>
+                <p className="text-xs text-slate-400 mt-1">Orders punched from POS appear here automatically.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1318,7 +1604,7 @@ export default function UltimateRestaurantPOS() {
                           }}
                           className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition"
                         >
-                          Mark Ready to Serve
+                          Mark Ready
                         </button>
                       )}
                       {k.status === "READY" && (
@@ -1330,7 +1616,7 @@ export default function UltimateRestaurantPOS() {
                           }}
                           className="flex-1 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition"
                         >
-                          Mark Food Served
+                          Mark Served
                         </button>
                       )}
                       <button
@@ -1352,15 +1638,21 @@ export default function UltimateRestaurantPOS() {
         )}
 
         {/* =========================================================================
-            MODULE 5: INVENTORY, RECIPE COSTING & STOCK INWARD
+            MODULE: RAW INGREDIENTS & STOCK INWARD
         ========================================================================= */}
         {activeModule === "INVENTORY" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
               <div>
-                <h2 className="text-xl font-black text-slate-900">Raw Ingredients & Recipe Inventory</h2>
-                <p className="text-xs text-slate-500">Auto-deducted upon billing with low stock threshold indicators</p>
+                <h2 className="text-xl font-black text-slate-900">Inventory & Raw Materials</h2>
+                <p className="text-xs text-slate-500">Add ingredients, log purchases and view stock deductions</p>
               </div>
+              <button
+                onClick={() => setShowAddInventoryModal(true)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
+              >
+                <Plus className="w-4 h-4" /> + Add New Raw Material
+              </button>
             </div>
 
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
@@ -1368,12 +1660,13 @@ export default function UltimateRestaurantPOS() {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="text-slate-400 uppercase font-bold border-b pb-2">
-                      <th className="py-2">Ingredient Name</th>
+                      <th className="py-2">Ingredient</th>
                       <th className="py-2">Unit</th>
                       <th className="py-2">Current Stock</th>
-                      <th className="py-2">Min Warning Level</th>
-                      <th className="py-2">Unit Cost</th>
-                      <th className="py-2 text-right">Quick Stock Entry</th>
+                      <th className="py-2">Low Warning Level</th>
+                      <th className="py-2">Cost / Unit</th>
+                      <th className="py-2 text-right">Quick Stock Inward</th>
+                      <th className="py-2 text-center">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1393,7 +1686,7 @@ export default function UltimateRestaurantPOS() {
                           <td className="py-3 text-right">
                             <button
                               onClick={() => {
-                                const addAmount = prompt(`Add stock for ${item.name} in ${item.unit}:`, "5");
+                                const addAmount = prompt(`Add stock inward for ${item.name} (${item.unit}):`, "5");
                                 if (addAmount && !isNaN(parseFloat(addAmount))) {
                                   const updated = inventory.map((i) =>
                                     i.id === item.id ? { ...i, currentStock: parseFloat((i.currentStock + parseFloat(addAmount)).toFixed(2)) } : i
@@ -1407,6 +1700,14 @@ export default function UltimateRestaurantPOS() {
                               + Inward Stock
                             </button>
                           </td>
+                          <td className="py-3 text-center">
+                            <button
+                              onClick={() => handleDeleteInventory(item.id)}
+                              className="p-1.5 text-slate-300 hover:text-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1418,7 +1719,107 @@ export default function UltimateRestaurantPOS() {
         )}
 
         {/* =========================================================================
-            MODULE 6: EXPENSE MANAGEMENT & FINANCIAL LEDGER
+            MODULE: EXECUTIVE ANALYTICS DASHBOARD
+        ========================================================================= */}
+        {activeModule === "DASHBOARD" && (
+          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Executive Performance Dashboard</h2>
+                <p className="text-xs text-slate-500">Consolidated financial overview & floor metrics</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Gross Sales Revenue</span>
+                <p className="text-2xl font-black text-slate-900 mt-1">{branding.currency} {dashboardStats.totalSales}</p>
+                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
+                  <ArrowUpRight className="w-3 h-3" /> {dashboardStats.totalOrders} Settled Orders
+                </span>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Total Expenses</span>
+                <p className="text-2xl font-black text-rose-600 mt-1">{branding.currency} {dashboardStats.totalExpense}</p>
+                <span className="text-[10px] text-slate-500 font-medium mt-1">Operational costs</span>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Estimated Net Profit</span>
+                <p className={`text-2xl font-black mt-1 ${dashboardStats.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  {branding.currency} {dashboardStats.netProfit}
+                </p>
+                <span className="text-[10px] text-slate-500 font-medium mt-1">Gross sales minus expenses</span>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Table Occupancy</span>
+                <p className="text-2xl font-black text-blue-600 mt-1">{dashboardStats.tableOccupancyRate}%</p>
+                <span className="text-[10px] text-slate-500 font-medium mt-1">{dashboardStats.occupiedTables} of {tables.length} tables dining</span>
+              </div>
+            </div>
+
+            {/* Collections Split */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown</h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Banknote className="w-4 h-4 text-emerald-600" /> Cash Drawer:</span>
+                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cashSales}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><QrCode className="w-4 h-4 text-blue-600" /> UPI Online:</span>
+                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.upiSales}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><CreditCard className="w-4 h-4 text-purple-600" /> Card / POS:</span>
+                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cardSales}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Users className="w-4 h-4 text-amber-600" /> Customer Credit (Udhar):</span>
+                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.creditSales}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Low Stock Alert */}
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" /> Low Stock Alerts
+                  </h3>
+                  <button onClick={() => setActiveModule("INVENTORY")} className="text-xs text-rose-600 font-bold hover:underline">
+                    Manage ➔
+                  </button>
+                </div>
+                {dashboardStats.lowStockCount === 0 ? (
+                  <p className="text-xs text-slate-400 py-6 text-center">All inventory stocks are above minimum thresholds.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {inventory
+                      .filter((i) => i.currentStock <= i.minStockLevel)
+                      .map((item) => (
+                        <div key={item.id} className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex justify-between items-center text-xs">
+                          <div>
+                            <p className="font-bold text-amber-900">{item.name}</p>
+                            <p className="text-[10px] text-amber-700">Min Alert: {item.minStockLevel} {item.unit}</p>
+                          </div>
+                          <span className="px-2 py-1 bg-amber-200 text-amber-900 font-black rounded-lg">
+                            {item.currentStock} {item.unit}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: EXPENSES MANAGEMENT
         ========================================================================= */}
         {activeModule === "EXPENSES" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
@@ -1447,7 +1848,7 @@ export default function UltimateRestaurantPOS() {
                 <input
                   name="title"
                   required
-                  placeholder="Expense Details (e.g. Dairy Milk Delivery)"
+                  placeholder="Expense Details (e.g. Milk & Dairy Delivery)"
                   className="sm:col-span-2 px-3 py-2 border rounded-xl text-xs"
                 />
                 <select name="category" className="px-3 py-2 border rounded-xl text-xs bg-white">
@@ -1478,9 +1879,8 @@ export default function UltimateRestaurantPOS() {
               </form>
             </div>
 
-            {/* Expenses List */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Expenses Record Ledger</h3>
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Expenses Ledger</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
@@ -1516,7 +1916,7 @@ export default function UltimateRestaurantPOS() {
         )}
 
         {/* =========================================================================
-            MODULE 7: CUSTOMER CRM & CREDIT (UDHAR) LEDGER
+            MODULE: CUSTOMERS CRM & UDHAR
         ========================================================================= */}
         {activeModule === "CUSTOMERS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
@@ -1557,13 +1957,13 @@ export default function UltimateRestaurantPOS() {
         )}
 
         {/* =========================================================================
-            MODULE 8: INVOICES AUDIT & GST COMPLIANCE
+            MODULE: INVOICE AUDIT
         ========================================================================= */}
         {activeModule === "AUDIT" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
               <h2 className="text-xl font-black text-slate-900 mb-4 flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-slate-600" /> Complete Tax Invoices Audit
+                <Receipt className="w-5 h-5 text-slate-600" /> Settled Invoices Audit
               </h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -1603,7 +2003,7 @@ export default function UltimateRestaurantPOS() {
                               setTimeout(() => window.print(), 100);
                             }}
                             className="p-1 hover:text-rose-600 text-slate-600"
-                            title="Reprint Tax Receipt"
+                            title="Reprint Bill"
                           >
                             <Printer className="w-4 h-4" />
                           </button>
@@ -1618,7 +2018,7 @@ export default function UltimateRestaurantPOS() {
         )}
 
         {/* =========================================================================
-            MODULE 9: WHITE-LABEL BRANDING & GST SETTINGS
+            MODULE: BRANDING & SETTINGS
         ========================================================================= */}
         {activeModule === "SETTINGS" && (
           <main className="p-4 md:p-6 max-w-4xl mx-auto w-full">
@@ -1671,7 +2071,7 @@ export default function UltimateRestaurantPOS() {
                   />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-500 uppercase block mb-1">UPI VPA (for auto QR)</label>
+                  <label className="font-bold text-slate-500 uppercase block mb-1">UPI VPA (PhonePe/GPay for QR)</label>
                   <input
                     type="text"
                     value={branding.upiId}
@@ -1708,7 +2108,7 @@ export default function UltimateRestaurantPOS() {
                 </div>
                 <div className="sm:col-span-2 pt-2">
                   <button type="submit" className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition">
-                    Save Branding & System Configuration
+                    Save Branding Configurations
                   </button>
                 </div>
               </form>
