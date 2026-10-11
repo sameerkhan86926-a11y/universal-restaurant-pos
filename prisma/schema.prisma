@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model RestaurantConfig {
+  id             String   @id @default("default")
+  name           String   @default("Spice Delight")
+  tagline        String   @default("Fresh & Delicious Everyday")
+  primaryColor   String   @default("#e11d48") // Rose-600
+  secondaryColor String   @default("#0f172a") // Slate-900
+  currency       String   @default("₹")
+  updatedAt      DateTime @updatedAt
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String
+  items     MenuItem[]
+  createdAt DateTime   @default(now())
+}
+
+model MenuItem {
+  id          String   @id @default(uuid())
+  name        String
+  price       Float
+  isVeg       Boolean  @default(true)
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+}
