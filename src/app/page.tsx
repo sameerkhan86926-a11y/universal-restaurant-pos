@@ -21,17 +21,11 @@ import {
   AlertTriangle,
   Clock,
   ArrowUpRight,
-  ShieldCheck,
   CreditCard,
   Banknote,
-  DollarSign,
-  Download,
-  Upload,
-  UserCheck,
-  Percent,
-  Calendar,
-  Edit,
   RotateCcw,
+  Percent,
+  Edit,
   X,
 } from "lucide-react";
 
@@ -249,7 +243,6 @@ export default function UltimateRestaurantPOS() {
     localStorage.setItem(key, JSON.stringify(data));
   };
 
-  // Helper to Reset all demo data to clean slate
   const handleResetData = () => {
     if (confirm("Are you sure you want to reset demo data? All records will be cleared for a fresh start.")) {
       localStorage.clear();
@@ -257,15 +250,19 @@ export default function UltimateRestaurantPOS() {
     }
   };
 
-  // Active Table
-  const currentTable = useMemo(() => {
-    return tables.find((t) => t.id === selectedTableId) || tables[0] || {
-      id: "t_def",
-      name: "Table 1",
-      capacity: 4,
-      status: "AVAILABLE",
-      activeCart: [],
-    };
+  // Explicit TableInfo fallback
+  const fallbackTable: TableInfo = {
+    id: "t_def",
+    name: "Table 1",
+    capacity: 4,
+    status: "AVAILABLE",
+    activeCart: [],
+    customerName: "",
+    customerPhone: "",
+  };
+
+  const currentTable: TableInfo = useMemo(() => {
+    return tables.find((t) => t.id === selectedTableId) || tables[0] || fallbackTable;
   }, [tables, selectedTableId]);
 
   const updateCurrentTableCart = (newCart: CartItem[]) => {
@@ -324,14 +321,13 @@ export default function UltimateRestaurantPOS() {
     updateCurrentTableCart(updatedCart);
   };
 
-     // Calculations
+  // Calculations with typed accumulator
   const cartSubtotal = useMemo(() => {
     return (currentTable.activeCart || []).reduce(
       (sum: number, item: CartItem) => sum + item.price * item.qty,
       0
     );
   }, [currentTable.activeCart]);
-
 
   const discountAmount = useMemo(() => {
     if (discountPercent > 0) return (cartSubtotal * discountPercent) / 100;
@@ -350,7 +346,6 @@ export default function UltimateRestaurantPOS() {
     return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUri)}`;
   }, [branding.upiId, branding.name, finalPayable]);
 
-  // Dispatch KOT
   const dispatchKOT = () => {
     if (currentTable.activeCart.length === 0) return;
 
@@ -379,7 +374,6 @@ export default function UltimateRestaurantPOS() {
     setTimeout(() => window.print(), 150);
   };
 
-  // Settle Bill
   const settleBill = () => {
     if (cartSubtotal === 0) return;
 
@@ -404,7 +398,6 @@ export default function UltimateRestaurantPOS() {
       cashier: currentUserRole,
     };
 
-    // Auto Recipe Inventory Deduction
     let updatedInventory = [...inventory];
     currentTable.activeCart.forEach((cItem) => {
       const originalMenu = menu.find((m) => m.id === cItem.itemId);
@@ -421,7 +414,6 @@ export default function UltimateRestaurantPOS() {
     setInventory(updatedInventory);
     saveToDisk("rms_inventory", updatedInventory);
 
-    // Update Customer CRM
     if (customerPhoneInput) {
       const existingCust = customers.find((c) => c.phone === customerPhoneInput);
       let updatedCustList = [...customers];
@@ -442,12 +434,10 @@ export default function UltimateRestaurantPOS() {
       saveToDisk("rms_customers", updatedCustList);
     }
 
-    // Save Invoice
     const updatedInvoices = [invoice, ...invoices];
     setInvoices(updatedInvoices);
     saveToDisk("rms_invoices", updatedInvoices);
 
-    // Free the Table
     const updatedTables = tables.map((t) => {
       if (t.id === selectedTableId) {
         return {
@@ -474,14 +464,13 @@ export default function UltimateRestaurantPOS() {
     setTimeout(() => window.print(), 150);
   };
 
-  // Dashboard Stats
   const dashboardStats = useMemo(() => {
-    const totalSales = invoices.reduce((s, i) => s + i.grandTotal, 0);
-    const totalExpense = expenses.reduce((s, e) => s + e.amount, 0);
-    const cashSales = invoices.filter((i) => i.paymentMode === "Cash").reduce((s, i) => s + i.grandTotal, 0);
-    const upiSales = invoices.filter((i) => i.paymentMode === "UPI").reduce((s, i) => s + i.grandTotal, 0);
-    const cardSales = invoices.filter((i) => i.paymentMode === "Card").reduce((s, i) => s + i.grandTotal, 0);
-    const creditSales = invoices.filter((i) => i.paymentMode === "Credit").reduce((s, i) => s + i.grandTotal, 0);
+    const totalSales = invoices.reduce((s: number, i) => s + i.grandTotal, 0);
+    const totalExpense = expenses.reduce((s: number, e) => s + e.amount, 0);
+    const cashSales = invoices.filter((i) => i.paymentMode === "Cash").reduce((s: number, i) => s + i.grandTotal, 0);
+    const upiSales = invoices.filter((i) => i.paymentMode === "UPI").reduce((s: number, i) => s + i.grandTotal, 0);
+    const cardSales = invoices.filter((i) => i.paymentMode === "Card").reduce((s: number, i) => s + i.grandTotal, 0);
+    const creditSales = invoices.filter((i) => i.paymentMode === "Credit").reduce((s: number, i) => s + i.grandTotal, 0);
     const occupiedTables = tables.filter((t) => t.status === "OCCUPIED").length;
     const lowStockCount = inventory.filter((i) => i.currentStock <= i.minStockLevel).length;
 
@@ -512,7 +501,7 @@ export default function UltimateRestaurantPOS() {
     });
   }, [menu, selectedCategory, searchQuery]);
 
-  // ================= ACTION HANDLERS =================
+  // Handlers
   const handleCreateMenuItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMenuName || !newMenuPrice) return;
@@ -535,7 +524,6 @@ export default function UltimateRestaurantPOS() {
     setMenu(updated);
     saveToDisk("rms_menu", updated);
 
-    // Reset Form
     setNewMenuName("");
     setNewMenuPrice("");
     setNewMenuHasVariants(false);
@@ -618,9 +606,7 @@ export default function UltimateRestaurantPOS() {
 
   return (
     <>
-      {/* =========================================================================
-          THERMAL PRINTER RECEIPT / KOT
-      ========================================================================= */}
+      {/* THERMAL PRINTER RECEIPT / KOT */}
       <div id="thermal-receipt" className="hidden print:block p-2 max-w-[80mm] mx-auto text-black font-mono text-[11px] leading-tight">
         {printInvoiceData && (
           <div className="space-y-1.5">
@@ -741,10 +727,7 @@ export default function UltimateRestaurantPOS() {
         )}
       </div>
 
-      {/* =========================================================================
-          MODALS: ADD MENU DISH / ADD TABLE / ADD INVENTORY
-      ========================================================================= */}
-      {/* 1. Add Menu Dish Modal */}
+      {/* MODALS */}
       {showAddMenuModal && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
@@ -805,7 +788,6 @@ export default function UltimateRestaurantPOS() {
                 />
               </div>
 
-              {/* Sizes / Variants Toggle */}
               <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
                 <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
                   <input
@@ -854,7 +836,6 @@ export default function UltimateRestaurantPOS() {
         </div>
       )}
 
-      {/* 2. Add Table Modal */}
       {showAddTableModal && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
@@ -901,7 +882,6 @@ export default function UltimateRestaurantPOS() {
         </div>
       )}
 
-      {/* 3. Add Raw Material Inventory Modal */}
       {showAddInventoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
@@ -989,11 +969,8 @@ export default function UltimateRestaurantPOS() {
         </div>
       )}
 
-      {/* =========================================================================
-          MAIN INTERACTIVE SAAS APPLICATION (SCREEN VIEW)
-      ========================================================================= */}
+      {/* SCREEN VIEW */}
       <div className="min-h-screen bg-slate-100 flex flex-col print:hidden font-sans text-slate-900">
-        {/* Header */}
         <header
           className="px-5 py-3 text-white flex justify-between items-center shadow-lg transition-colors"
           style={{ backgroundColor: branding.secondaryColor }}
@@ -1008,7 +985,6 @@ export default function UltimateRestaurantPOS() {
             </div>
           </div>
 
-          {/* Quick Actions & Role Switcher */}
           <div className="flex items-center gap-2">
             <button
               onClick={handleResetData}
@@ -1034,7 +1010,7 @@ export default function UltimateRestaurantPOS() {
           </div>
         </header>
 
-        {/* Global Navigation Menu Tabs */}
+        {/* Global Navigation */}
         <nav className="bg-white border-b border-slate-200 px-4 md:px-6 flex gap-1 overflow-x-auto text-xs font-bold">
           {[
             { id: "POS", label: "POS Billing", icon: ShoppingBag },
@@ -1071,9 +1047,7 @@ export default function UltimateRestaurantPOS() {
           })}
         </nav>
 
-        {/* =========================================================================
-            MODULE: MENU CATALOG & FULL EDITABLE MANAGER
-        ========================================================================= */}
+        {/* MODULE: MENU CATALOG */}
         {activeModule === "MENU_MGMT" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -1134,14 +1108,10 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: POS BILLING SYSTEM
-        ========================================================================= */}
+        {/* MODULE: POS BILLING */}
         {activeModule === "POS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left 7 Columns: Items & Catalog */}
             <div className="lg:col-span-7 space-y-4">
-              {/* Tables Switch Bar */}
               <div className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1">
@@ -1180,7 +1150,6 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Search & Categories */}
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -1218,7 +1187,6 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Items Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[580px] overflow-y-auto pr-1">
                 {filteredMenuItems.map((item) => (
                   <div
@@ -1267,7 +1235,6 @@ export default function UltimateRestaurantPOS() {
               </div>
             </div>
 
-            {/* Right 5 Columns: Active Terminal Bill */}
             <div className="lg:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
               <div className="space-y-4">
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -1285,7 +1252,6 @@ export default function UltimateRestaurantPOS() {
                   )}
                 </div>
 
-                {/* Customer CRM inputs */}
                 <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <input
                     type="tel"
@@ -1303,7 +1269,6 @@ export default function UltimateRestaurantPOS() {
                   />
                 </div>
 
-                {/* Cart list */}
                 <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto pr-1">
                   {currentTable.activeCart.length === 0 ? (
                     <p className="text-xs text-slate-400 py-12 text-center">No items added to {currentTable.name}.</p>
@@ -1340,9 +1305,7 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Settlement Footer */}
               <div className="pt-3 border-t border-slate-200 space-y-2 text-xs">
-                {/* Discount */}
                 <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl">
                   <span className="text-[10px] font-bold text-slate-500 flex items-center gap-0.5"><Percent className="w-3 h-3" /> Discount:</span>
                   <input
@@ -1389,7 +1352,6 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 </div>
 
-                {/* Modes */}
                 <div>
                   <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Payment Method</span>
                   <div className="grid grid-cols-5 gap-1 text-[11px] font-bold">
@@ -1409,7 +1371,6 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 </div>
 
-                {/* Split fields */}
                 {activePaymentMode === "Split" && (
                   <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-xl">
                     <input
@@ -1451,9 +1412,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: TABLES & FLOOR PLAN
-        ========================================================================= */}
+        {/* MODULE: TABLES FLOOR PLAN */}
         {activeModule === "TABLES" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -1502,8 +1461,7 @@ export default function UltimateRestaurantPOS() {
                             <Clock className="w-3 h-3 text-slate-400" /> Seated: {tbl.occupiedSince || "Just now"}
                           </p>
                           <p className="font-bold text-slate-800">
-                            Active Items: tbl.activeCart.reduce((s: number, i: CartItem) => s + i.qty, 0)
- dishes
+                            Active Items: {tbl.activeCart.reduce((s: number, i) => s + i.qty, 0)} dishes
                           </p>
                         </div>
                       )}
@@ -1527,9 +1485,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: KITCHEN DISPLAY SCREEN (KDS)
-        ========================================================================= */}
+        {/* MODULE: KDS */}
         {activeModule === "KDS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -1642,9 +1598,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: RAW INGREDIENTS & STOCK INWARD
-        ========================================================================= */}
+        {/* MODULE: INVENTORY */}
         {activeModule === "INVENTORY" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -1723,9 +1677,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: EXECUTIVE ANALYTICS DASHBOARD
-        ========================================================================= */}
+        {/* MODULE: DASHBOARD */}
         {activeModule === "DASHBOARD" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="flex justify-between items-center">
@@ -1765,7 +1717,6 @@ export default function UltimateRestaurantPOS() {
               </div>
             </div>
 
-            {/* Collections Split */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown</h3>
@@ -1789,7 +1740,6 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Low Stock Alert */}
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -1823,9 +1773,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: EXPENSES MANAGEMENT
-        ========================================================================= */}
+        {/* MODULE: EXPENSES */}
         {activeModule === "EXPENSES" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
@@ -1920,9 +1868,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: CUSTOMERS CRM & UDHAR
-        ========================================================================= */}
+        {/* MODULE: CUSTOMERS */}
         {activeModule === "CUSTOMERS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
@@ -1961,9 +1907,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: INVOICE AUDIT
-        ========================================================================= */}
+        {/* MODULE: AUDIT */}
         {activeModule === "AUDIT" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
@@ -2022,9 +1966,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* =========================================================================
-            MODULE: BRANDING & SETTINGS
-        ========================================================================= */}
+        {/* MODULE: SETTINGS */}
         {activeModule === "SETTINGS" && (
           <main className="p-4 md:p-6 max-w-4xl mx-auto w-full">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
