@@ -324,10 +324,14 @@ export default function UltimateRestaurantPOS() {
     updateCurrentTableCart(updatedCart);
   };
 
-  // Calculations
+     // Calculations
   const cartSubtotal = useMemo(() => {
-    return currentTable.activeCart.reduce((sum, item) => sum + item.price * item.qty, 0);
+    return (currentTable.activeCart || []).reduce(
+      (sum: number, item: CartItem) => sum + item.price * item.qty,
+      0
+    );
   }, [currentTable.activeCart]);
+
 
   const discountAmount = useMemo(() => {
     if (discountPercent > 0) return (cartSubtotal * discountPercent) / 100;
