@@ -30,6 +30,7 @@ import {
   Lock,
   KeyRound,
   ShieldAlert,
+  HandCoins,
 } from "lucide-react";
 
 // ================= TYPES & INTERFACES =================
@@ -107,6 +108,16 @@ export interface CustomerProfile {
   creditBalance: number;
 }
 
+export interface CreditCollection {
+  id: string;
+  date: string;
+  customerPhone: string;
+  customerName: string;
+  amount: number;
+  paymentMode: "Cash" | "UPI";
+  collectedBy: string;
+}
+
 export interface SettledInvoice {
   id: string;
   invoiceNo: string;
@@ -140,7 +151,6 @@ export interface RestaurantBranding {
   footerNote: string;
 }
 
-// Default Role PINs
 const defaultRolePins: Record<UserRole, string> = {
   OWNER: "1111",
   MANAGER: "2222",
@@ -150,7 +160,6 @@ const defaultRolePins: Record<UserRole, string> = {
   ACCOUNTANT: "6666",
 };
 
-// Role Allowed Modules Map
 const roleAllowedModules: Record<UserRole, string[]> = {
   OWNER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "EXPENSES", "CUSTOMERS", "AUDIT", "SETTINGS"],
   MANAGER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "CUSTOMERS", "AUDIT"],
@@ -187,6 +196,12 @@ export default function UltimateRestaurantPOS() {
   const [enteredPin, setEnteredPin] = useState("");
   const [pinError, setPinError] = useState(false);
 
+  // Credit Receive Modal
+  const [showReceiveCreditModal, setShowReceiveCreditModal] = useState(false);
+  const [selectedCustForCredit, setSelectedCustForCredit] = useState<CustomerProfile | null>(null);
+  const [receivedAmountInput, setReceivedAmountInput] = useState("");
+  const [receivedPaymentMode, setReceivedPaymentMode] = useState<"Cash" | "UPI">("Cash");
+
   // Core Data
   const [branding, setBranding] = useState<RestaurantBranding>(initialBranding);
   const [tables, setTables] = useState<TableInfo[]>([
@@ -208,6 +223,7 @@ export default function UltimateRestaurantPOS() {
   const [kotSequence, setKotSequence] = useState<number>(101);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
+  const [creditCollections, setCreditCollections] = useState<CreditCollection[]>([]);
   const [invoices, setInvoices] = useState<SettledInvoice[]>([]);
 
   // POS State
@@ -260,6 +276,7 @@ export default function UltimateRestaurantPOS() {
     if (getSaved("rms_kots")) setActiveKOTs(JSON.parse(getSaved("rms_kots")!));
     if (getSaved("rms_expenses")) setExpenses(JSON.parse(getSaved("rms_expenses")!));
     if (getSaved("rms_customers")) setCustomers(JSON.parse(getSaved("rms_customers")!));
+    if (getSaved("rms_credit_collections")) setCreditCollections(JSON.parse(getSaved("rms_credit_collections")!));
     if (getSaved("rms_invoices")) setInvoices(JSON.parse(getSaved("rms_invoices")!));
     if (getSaved("rms_kot_seq")) setKotSequence(parseInt(getSaved("rms_kot_seq")!));
     if (getSaved("rms_role_pins")) setRolePins(JSON.parse(getSaved("rms_role_pins")!));
@@ -269,10 +286,18 @@ export default function UltimateRestaurantPOS() {
     localStorage.setItem(key, JSON.stringify(data));
   };
 
-  const handleResetData = () => {
-    if (confirm("Reset all data to default demo state?")) {
+  // ADMIN ONLY DATA RESET
+  const handleAdminResetData = () => {
+    if (currentUserRole !== "OWNER") {
+      alert("Unauthorized! Only the Restaurant Owner can reset software data.");
+      return;
+    }
+    const entered = prompt("WARNING: This will permanently delete all records!\nType 'RESET' to confirm:");
+    if (entered === "RESET") {
       localStorage.clear();
       window.location.reload();
+    } else {
+      alert("Reset cancelled.");
     }
   };
 
@@ -291,7 +316,6 @@ export default function UltimateRestaurantPOS() {
       setCurrentUserRole(targetRole);
       setShowPinModal(false);
       setPinError(false);
-      // Ensure current active module is allowed for new role
       const allowed = roleAllowedModules[targetRole];
       if (!allowed.includes(activeModule)) {
         setActiveModule(allowed[0]);
@@ -518,13 +542,69 @@ export default function UltimateRestaurantPOS() {
     setTimeout(() => window.print(), 150);
   };
 
+  // Receive Credit (Udhar Vasooli) Handler
+  const handleReceiveCreditPayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustForCredit || !receivedAmountInput) return;
+
+    const amt = parseFloat(receivedAmountInput);
+    if (isNaN(amt) || amt <= 0) {
+      alert("Please enter a valid amount!");
+      return;
+    }
+
+    if (amt > selectedCustForCredit.creditBalance) {
+      alert(`Amount cannot exceed outstanding balance of ₹${selectedCustForCredit.creditBalance}`);
+      return;
+    }
+
+    // 1. Update customer credit balance
+    const updatedCustList = customers.map((c) => {
+      if (c.phone === selectedCustForCredit.phone) {
+        return {
+          ...c,
+          creditBalance: Math.max(0, c.creditBalance - amt),
+        };
+      }
+      return c;
+    });
+    setCustomers(updatedCustList);
+    saveToDisk("rms_customers", updatedCustList);
+
+    // 2. Add to Credit Collections Log
+    const collectionRecord: CreditCollection = {
+      id: `CR-REC-${Date.now().toString().slice(-6)}`,
+      date: new Date().toLocaleString(),
+      customerPhone: selectedCustForCredit.phone,
+      customerName: selectedCustForCredit.name,
+      amount: amt,
+      paymentMode: receivedPaymentMode,
+      collectedBy: currentUserRole,
+    };
+    const updatedCollections = [collectionRecord, ...creditCollections];
+    setCreditCollections(updatedCollections);
+    saveToDisk("rms_credit_collections", updatedCollections);
+
+    alert(`Payment of ₹${amt} received successfully from ${selectedCustForCredit.name}!`);
+    setShowReceiveCreditModal(false);
+    setSelectedCustForCredit(null);
+    setReceivedAmountInput("");
+  };
+
   const dashboardStats = useMemo(() => {
     const totalSales = invoices.reduce((s: number, i) => s + i.grandTotal, 0);
     const totalExpense = expenses.reduce((s: number, e) => s + e.amount, 0);
-    const cashSales = invoices.filter((i) => i.paymentMode === "Cash").reduce((s: number, i) => s + i.grandTotal, 0);
-    const upiSales = invoices.filter((i) => i.paymentMode === "UPI").reduce((s: number, i) => s + i.grandTotal, 0);
+
+    // Add collected credit into respective payment methods
+    const creditCollectedCash = creditCollections.filter((c) => c.paymentMode === "Cash").reduce((s: number, c) => s + c.amount, 0);
+    const creditCollectedUPI = creditCollections.filter((c) => c.paymentMode === "UPI").reduce((s: number, c) => s + c.amount, 0);
+
+    const cashSales = invoices.filter((i) => i.paymentMode === "Cash").reduce((s: number, i) => s + i.grandTotal, 0) + creditCollectedCash;
+    const upiSales = invoices.filter((i) => i.paymentMode === "UPI").reduce((s: number, i) => s + i.grandTotal, 0) + creditCollectedUPI;
     const cardSales = invoices.filter((i) => i.paymentMode === "Card").reduce((s: number, i) => s + i.grandTotal, 0);
-    const creditSales = invoices.filter((i) => i.paymentMode === "Credit").reduce((s: number, i) => s + i.grandTotal, 0);
+
+    // Current outstanding credit
+    const currentOutstanding = customers.reduce((s: number, c) => s + c.creditBalance, 0);
     const occupiedTables = tables.filter((t) => t.status === "OCCUPIED").length;
     const lowStockCount = inventory.filter((i) => i.currentStock <= i.minStockLevel).length;
 
@@ -536,12 +616,12 @@ export default function UltimateRestaurantPOS() {
       cashSales,
       upiSales,
       cardSales,
-      creditSales,
+      currentOutstanding,
       occupiedTables,
       tableOccupancyRate: tables.length > 0 ? Math.round((occupiedTables / tables.length) * 100) : 0,
       lowStockCount,
     };
-  }, [invoices, expenses, tables, inventory]);
+  }, [invoices, expenses, tables, inventory, customers, creditCollections]);
 
   const categories = useMemo(() => {
     return ["All", ...Array.from(new Set(menu.map((m) => m.category)))];
@@ -682,7 +762,7 @@ export default function UltimateRestaurantPOS() {
                 maxLength={6}
                 required
                 autoFocus
-                placeholder="Enter 4-digit PIN"
+                placeholder="Enter PIN"
                 value={enteredPin}
                 onChange={(e) => {
                   setEnteredPin(e.target.value);
@@ -698,7 +778,7 @@ export default function UltimateRestaurantPOS() {
               )}
 
               <div className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded-lg text-left">
-                <span className="font-bold block text-slate-500">Default Demo PINs:</span>
+                <span className="font-bold block text-slate-500">Default PINs:</span>
                 Owner: 1111 | Manager: 2222<br />Cashier: 3333 | Waiter: 4444<br />Chef: 5555 | Accountant: 6666
               </div>
 
@@ -717,6 +797,83 @@ export default function UltimateRestaurantPOS() {
                   Authorize
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          RECEIVE CREDIT PAYMENT (UDHAR RECOVERY) MODAL
+      ========================================================================= */}
+      {showReceiveCreditModal && selectedCustForCredit && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div className="flex items-center gap-2">
+                <HandCoins className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-black text-base text-slate-900">Receive Credit Payment</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowReceiveCreditModal(false);
+                  setSelectedCustForCredit(null);
+                }}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl space-y-1 text-xs">
+              <p><span className="font-bold text-slate-700">Customer:</span> {selectedCustForCredit.name}</p>
+              <p><span className="font-bold text-slate-700">Phone:</span> {selectedCustForCredit.phone}</p>
+              <p className="font-bold text-rose-600 text-sm pt-1">
+                Outstanding Udhar: {branding.currency} {selectedCustForCredit.creditBalance}
+              </p>
+            </div>
+
+            <form onSubmit={handleReceiveCreditPayment} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Amount Receiving (₹)</label>
+                <input
+                  type="number"
+                  required
+                  autoFocus
+                  max={selectedCustForCredit.creditBalance}
+                  placeholder={`Max ₹${selectedCustForCredit.creditBalance}`}
+                  value={receivedAmountInput}
+                  onChange={(e) => setReceivedAmountInput(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl font-bold text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Received Payment Via</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["Cash", "UPI"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setReceivedPaymentMode(mode)}
+                      className={`py-2 rounded-xl border font-bold transition flex items-center justify-center gap-1.5 ${
+                        receivedPaymentMode === mode
+                          ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                          : "bg-slate-50 text-slate-700 border-slate-200"
+                      }`}
+                    >
+                      {mode === "Cash" ? <Banknote className="w-4 h-4" /> : <QrCode className="w-4 h-4" />}
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition shadow-md"
+              >
+                Confirm Payment & Update Balance
+              </button>
             </form>
           </div>
         </div>
@@ -1102,15 +1259,6 @@ export default function UltimateRestaurantPOS() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleResetData}
-              title="Reset all demo data"
-              className="p-1.5 bg-white/10 hover:bg-red-500/80 rounded-lg text-white transition text-xs flex items-center gap-1 font-bold"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reset Demo</span>
-            </button>
-
             {/* Password-Protected Role Switcher */}
             <div className="flex items-center gap-1.5 bg-black/20 p-1 rounded-xl">
               <span className="text-[10px] uppercase font-bold text-white/60 px-1 hidden sm:inline flex items-center gap-0.5">
@@ -1863,15 +2011,15 @@ export default function UltimateRestaurantPOS() {
               </div>
 
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Table Occupancy</span>
-                <p className="text-2xl font-black text-blue-600 mt-1">{dashboardStats.tableOccupancyRate}%</p>
-                <span className="text-[10px] text-slate-500 font-medium mt-1">{dashboardStats.occupiedTables} of {tables.length} tables dining</span>
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Current Outstanding Udhar</span>
+                <p className="text-2xl font-black text-rose-600 mt-1">{branding.currency} {dashboardStats.currentOutstanding}</p>
+                <span className="text-[10px] text-slate-500 font-medium mt-1">Pending customer recovery</span>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown</h3>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown (Inc. Udhar Vasooli)</h3>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
                     <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Banknote className="w-4 h-4 text-emerald-600" /> Cash Drawer:</span>
@@ -1884,10 +2032,6 @@ export default function UltimateRestaurantPOS() {
                   <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
                     <span className="font-semibold text-slate-700 flex items-center gap-1.5"><CreditCard className="w-4 h-4 text-purple-600" /> Card / POS:</span>
                     <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cardSales}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Users className="w-4 h-4 text-amber-600" /> Customer Credit (Udhar):</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.creditSales}</span>
                   </div>
                 </div>
               </div>
@@ -2020,12 +2164,16 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: CUSTOMERS */}
+        {/* MODULE: CUSTOMERS CRM & UDHAR (WITH RECEIVED CREDIT SETTLEMENT) */}
         {activeModule === "CUSTOMERS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <h2 className="text-xl font-black text-slate-900 mb-1">Customer CRM & Credit Ledger</h2>
-              <p className="text-xs text-slate-500 mb-4">Track recurring guest orders and outstanding balances</p>
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Customer CRM & Credit (Udhar) Ledger</h2>
+                  <p className="text-xs text-slate-500">Track guest visits, outstanding credit, and clear pending dues</p>
+                </div>
+              </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -2035,27 +2183,93 @@ export default function UltimateRestaurantPOS() {
                       <th className="py-2">Mobile Phone</th>
                       <th className="py-2">Visits Count</th>
                       <th className="py-2">Lifetime Spent</th>
-                      <th className="py-2 text-right">Udhar / Outstanding</th>
+                      <th className="py-2">Outstanding Udhar</th>
+                      <th className="py-2 text-right">Credit Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {customers.map((cust, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="py-3 font-bold text-slate-900">{cust.name}</td>
-                        <td className="py-3 text-slate-600 font-mono">{cust.phone}</td>
-                        <td className="py-3">{cust.visits} Orders</td>
-                        <td className="py-3 font-bold text-slate-900">{branding.currency} {cust.totalSpent}</td>
-                        <td className="py-3 text-right">
-                          <span className={`px-2 py-1 rounded-lg font-black ${cust.creditBalance > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}>
-                            {branding.currency} {cust.creditBalance}
-                          </span>
+                    {customers.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-400">
+                          No customers recorded yet. Add customer phone numbers during billing to build CRM.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      customers.map((cust, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="py-3 font-bold text-slate-900">{cust.name}</td>
+                          <td className="py-3 text-slate-600 font-mono">{cust.phone}</td>
+                          <td className="py-3">{cust.visits} Orders</td>
+                          <td className="py-3 font-bold text-slate-900">{branding.currency} {cust.totalSpent}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-lg font-black ${cust.creditBalance > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}>
+                              {branding.currency} {cust.creditBalance}
+                            </span>
+                          </td>
+                          <td className="py-3 text-right">
+                            {cust.creditBalance > 0 ? (
+                              <button
+                                onClick={() => {
+                                  setSelectedCustForCredit(cust);
+                                  setReceivedAmountInput(cust.creditBalance.toString());
+                                  setShowReceiveCreditModal(true);
+                                }}
+                                className="px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition flex items-center gap-1 ml-auto"
+                              >
+                                <HandCoins className="w-3.5 h-3.5" /> Receive Payment
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-semibold">All Dues Cleared</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
+
+            {/* Credit Collection Audit History */}
+            {creditCollections.length > 0 && (
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Receipt className="w-4 h-4 text-emerald-600" /> Udhar Payment Recovery Log
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="text-slate-400 uppercase font-bold border-b pb-2">
+                        <th className="py-2">Receipt ID</th>
+                        <th className="py-2">Date & Time</th>
+                        <th className="py-2">Customer</th>
+                        <th className="py-2">Collected By</th>
+                        <th className="py-2">Mode</th>
+                        <th className="py-2 text-right">Amount Received</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {creditCollections.map((rec) => (
+                        <tr key={rec.id} className="hover:bg-slate-50">
+                          <td className="py-2.5 font-bold text-slate-800">{rec.id}</td>
+                          <td className="py-2.5 text-slate-500">{rec.date}</td>
+                          <td className="py-2.5 font-semibold text-slate-900">{rec.customerName} ({rec.customerPhone})</td>
+                          <td className="py-2.5 text-slate-600">{rec.collectedBy}</td>
+                          <td className="py-2.5">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
+                              {rec.paymentMode}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right font-black text-emerald-600">
+                            + {branding.currency} {rec.amount}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </main>
         )}
 
@@ -2118,7 +2332,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: SETTINGS (OWNER ONLY) */}
+        {/* MODULE: SETTINGS (ADMIN ONLY) */}
         {activeModule === "SETTINGS" && (
           <main className="p-4 md:p-6 max-w-4xl mx-auto w-full space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -2170,7 +2384,7 @@ export default function UltimateRestaurantPOS() {
                   />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-500 uppercase block mb-1">UPI VPA (PhonePe/GPay VPA for QR)</label>
+                  <label className="font-bold text-slate-500 uppercase block mb-1">UPI VPA (PhonePe/GPay for QR)</label>
                   <input
                     type="text"
                     value={branding.upiId}
@@ -2218,7 +2432,7 @@ export default function UltimateRestaurantPOS() {
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2 mb-1">
                 <KeyRound className="w-4 h-4 text-rose-600" /> Employee Role Security PINs
               </h3>
-              <p className="text-xs text-slate-500 mb-4">Set 4-digit security PIN for each role to prevent unauthorized access</p>
+              <p className="text-xs text-slate-500 mb-4">Set security PINs to prevent staff from accessing admin zones</p>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                 {(["OWNER", "MANAGER", "CASHIER", "WAITER", "CHEF", "ACCOUNTANT"] as UserRole[]).map((r) => (
@@ -2238,6 +2452,23 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Admin-Only Danger Zone for Software Reset */}
+            <div className="bg-red-50 p-6 rounded-2xl border border-red-200 space-y-2">
+              <h3 className="text-base font-black text-red-900 flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-red-600" /> Admin Only: Factory Data Reset
+              </h3>
+              <p className="text-xs text-red-700">
+                This will wipe out all local bills, customers, menu items, and inventory to restore default empty state.
+              </p>
+              <button
+                type="button"
+                onClick={handleAdminResetData}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl transition shadow-sm"
+              >
+                Reset Database & Demo Data
+              </button>
             </div>
           </main>
         )}
