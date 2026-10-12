@@ -31,10 +31,12 @@ import {
   KeyRound,
   ShieldAlert,
   HandCoins,
+  FileEdit,
 } from "lucide-react";
 
 // ================= TYPES & INTERFACES =================
 export type UserRole = "OWNER" | "MANAGER" | "CASHIER" | "WAITER" | "CHEF" | "ACCOUNTANT";
+export type DigitalSplitMethod = "UPI" | "Card" | "Bank Transfer";
 
 export interface ItemVariant {
   name: string;
@@ -118,6 +120,12 @@ export interface CreditCollection {
   collectedBy: string;
 }
 
+export interface SplitPaymentDetail {
+  cash: number;
+  digitalAmount: number;
+  digitalMode: DigitalSplitMethod;
+}
+
 export interface SettledInvoice {
   id: string;
   invoiceNo: string;
@@ -132,7 +140,7 @@ export interface SettledInvoice {
   sgst: number;
   grandTotal: number;
   paymentMode: "Cash" | "UPI" | "Card" | "Credit" | "Split";
-  splitDetails?: { cash: number; online: number };
+  splitDetails?: SplitPaymentDetail;
   cashier: string;
 }
 
@@ -202,6 +210,17 @@ export default function UltimateRestaurantPOS() {
   const [receivedAmountInput, setReceivedAmountInput] = useState("");
   const [receivedPaymentMode, setReceivedPaymentMode] = useState<"Cash" | "UPI">("Cash");
 
+  // Admin Bill Edit Modal States
+  const [showBillEditModal, setShowBillEditModal] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<SettledInvoice | null>(null);
+  const [editCustomerName, setEditCustomerName] = useState("");
+  const [editCustomerPhone, setEditCustomerPhone] = useState("");
+  const [editPaymentMode, setEditPaymentMode] = useState<"Cash" | "UPI" | "Card" | "Credit" | "Split">("Cash");
+  const [editDiscountAmount, setEditDiscountAmount] = useState<number>(0);
+  const [editSplitCash, setEditSplitCash] = useState<number>(0);
+  const [editSplitDigital, setEditSplitDigital] = useState<number>(0);
+  const [editSplitDigitalMode, setEditSplitDigitalMode] = useState<DigitalSplitMethod>("UPI");
+
   // Core Data
   const [branding, setBranding] = useState<RestaurantBranding>(initialBranding);
   const [tables, setTables] = useState<TableInfo[]>([
@@ -233,8 +252,12 @@ export default function UltimateRestaurantPOS() {
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [discountFlat, setDiscountFlat] = useState<number>(0);
   const [activePaymentMode, setActivePaymentMode] = useState<"Cash" | "UPI" | "Card" | "Credit" | "Split">("UPI");
+  
+  // Specific Split States
   const [splitCashAmount, setSplitCashAmount] = useState<string>("");
-  const [splitOnlineAmount, setSplitOnlineAmount] = useState<string>("");
+  const [splitDigitalAmount, setSplitDigitalAmount] = useState<string>("");
+  const [splitDigitalMethod, setSplitDigitalMethod] = useState<DigitalSplitMethod>("UPI");
+
   const [customerPhoneInput, setCustomerPhoneInput] = useState("");
   const [customerNameInput, setCustomerNameInput] = useState("");
 
@@ -286,7 +309,6 @@ export default function UltimateRestaurantPOS() {
     localStorage.setItem(key, JSON.stringify(data));
   };
 
-  // ADMIN ONLY DATA RESET
   const handleAdminResetData = () => {
     if (currentUserRole !== "OWNER") {
       alert("Unauthorized! Only the Restaurant Owner can reset software data.");
@@ -301,7 +323,6 @@ export default function UltimateRestaurantPOS() {
     }
   };
 
-  // Switch Role with PIN Verification
   const requestRoleSwitch = (role: UserRole) => {
     if (role === currentUserRole) return;
     setTargetRole(role);
@@ -414,7 +435,21 @@ export default function UltimateRestaurantPOS() {
   const sgstAmount = Number(((taxableAmount * halfTaxRate) / 100).toFixed(2));
   const finalPayable = Math.round(taxableAmount + cgstAmount + sgstAmount);
 
-  // Reliable Universal Dynamic QR Code Generator with Strict Amount Passing
+  // Smart Split Balance Adjuster
+  const handleSplitCashChange = (val: string) => {
+    setSplitCashAmount(val);
+    const parsedCash = parseFloat(val) || 0;
+    const remaining = Math.max(0, finalPayable - parsedCash);
+    setSplitDigitalAmount(remaining.toString());
+  };
+
+  const handleSplitDigitalChange = (val: string) => {
+    setSplitDigitalAmount(val);
+    const parsedDigital = parseFloat(val) || 0;
+    const remaining = Math.max(0, finalPayable - parsedDigital);
+    setSplitCashAmount(remaining.toString());
+  };
+
   const getUpiQrUrl = (amount: number) => {
     if (!branding.upiId) return "";
     const cleanUpi = branding.upiId.trim();
@@ -455,6 +490,18 @@ export default function UltimateRestaurantPOS() {
   const settleBill = () => {
     if (cartSubtotal === 0) return;
 
+    // Validate Split Entry with exact mode
+    let finalSplitDetails: SplitPaymentDetail | undefined = undefined;
+    if (activePaymentMode === "Split") {
+      const c = parseFloat(splitCashAmount) || 0;
+      const d = parseFloat(splitDigitalAmount) || 0;
+      if (Math.round(c + d) !== finalPayable) {
+        alert(`Split amounts (Cash ₹${c} + ${splitDigitalMethod} ₹${d} = ₹${c + d}) must equal Grand Total ₹${finalPayable}!`);
+        return;
+      }
+      finalSplitDetails = { cash: c, digitalAmount: d, digitalMode: splitDigitalMethod };
+    }
+
     const invoice: SettledInvoice = {
       id: `INV-${Date.now().toString().slice(-6)}`,
       invoiceNo: `INV/${new Date().getFullYear()}/${(invoices.length + 1).toString().padStart(4, "0")}`,
@@ -469,10 +516,7 @@ export default function UltimateRestaurantPOS() {
       sgst: sgstAmount,
       grandTotal: finalPayable,
       paymentMode: activePaymentMode,
-      splitDetails:
-        activePaymentMode === "Split"
-          ? { cash: parseFloat(splitCashAmount) || 0, online: parseFloat(splitOnlineAmount) || 0 }
-          : undefined,
+      splitDetails: finalSplitDetails,
       cashier: currentUserRole,
     };
 
@@ -536,6 +580,8 @@ export default function UltimateRestaurantPOS() {
     setPrintKOTData(null);
     setDiscountPercent(0);
     setDiscountFlat(0);
+    setSplitCashAmount("");
+    setSplitDigitalAmount("");
     setCustomerNameInput("");
     setCustomerPhoneInput("");
 
@@ -589,6 +635,74 @@ export default function UltimateRestaurantPOS() {
     setReceivedAmountInput("");
   };
 
+  // Admin Open Bill Edit
+  const handleOpenBillEdit = (inv: SettledInvoice) => {
+    if (currentUserRole !== "OWNER") {
+      alert("Access Denied! Bill modification is strictly reserved for the Restaurant Owner (Admin).");
+      return;
+    }
+    setEditingInvoice(inv);
+    setEditCustomerName(inv.customerName || "");
+    setEditCustomerPhone(inv.customerPhone || "");
+    setEditPaymentMode(inv.paymentMode);
+    setEditDiscountAmount(inv.discount);
+    if (inv.splitDetails) {
+      setEditSplitCash(inv.splitDetails.cash);
+      setEditSplitDigital(inv.splitDetails.digitalAmount);
+      setEditSplitDigitalMode(inv.splitDetails.digitalMode);
+    } else {
+      setEditSplitCash(0);
+      setEditSplitDigital(0);
+      setEditSplitDigitalMode("UPI");
+    }
+    setShowBillEditModal(true);
+  };
+
+  // Admin Save Modified Bill
+  const handleSaveBillEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingInvoice) return;
+
+    const newSubtotal = editingInvoice.subtotal;
+    const newTaxable = Math.max(0, newSubtotal - editDiscountAmount);
+    const halfTaxRate = branding.taxRate / 2;
+    const newCgst = Number(((newTaxable * halfTaxRate) / 100).toFixed(2));
+    const newSgst = Number(((newTaxable * halfTaxRate) / 100).toFixed(2));
+    const newGrandTotal = Math.round(newTaxable + newCgst + newSgst);
+
+    let newSplit: SplitPaymentDetail | undefined = undefined;
+    if (editPaymentMode === "Split") {
+      if (Math.round(editSplitCash + editSplitDigital) !== newGrandTotal) {
+        alert(`Split total (₹${editSplitCash + editSplitDigital}) must equal Grand Total ₹${newGrandTotal}!`);
+        return;
+      }
+      newSplit = { cash: editSplitCash, digitalAmount: editSplitDigital, digitalMode: editSplitDigitalMode };
+    }
+
+    const updatedInvoices = invoices.map((inv) => {
+      if (inv.id === editingInvoice.id) {
+        return {
+          ...inv,
+          customerName: editCustomerName,
+          customerPhone: editCustomerPhone,
+          paymentMode: editPaymentMode,
+          discount: editDiscountAmount,
+          cgst: newCgst,
+          sgst: newSgst,
+          grandTotal: newGrandTotal,
+          splitDetails: newSplit,
+        };
+      }
+      return inv;
+    });
+
+    setInvoices(updatedInvoices);
+    saveToDisk("rms_invoices", updatedInvoices);
+    alert(`Bill ${editingInvoice.invoiceNo} successfully updated by Admin!`);
+    setShowBillEditModal(false);
+    setEditingInvoice(null);
+  };
+
   const dashboardStats = useMemo(() => {
     const totalSales = invoices.reduce((s: number, i) => s + i.grandTotal, 0);
     const totalExpense = expenses.reduce((s: number, e) => s + e.amount, 0);
@@ -596,9 +710,18 @@ export default function UltimateRestaurantPOS() {
     const creditCollectedCash = creditCollections.filter((c) => c.paymentMode === "Cash").reduce((s: number, c) => s + c.amount, 0);
     const creditCollectedUPI = creditCollections.filter((c) => c.paymentMode === "UPI").reduce((s: number, c) => s + c.amount, 0);
 
-    const cashSales = invoices.filter((i) => i.paymentMode === "Cash").reduce((s: number, i) => s + i.grandTotal, 0) + creditCollectedCash;
-    const upiSales = invoices.filter((i) => i.paymentMode === "UPI").reduce((s: number, i) => s + i.grandTotal, 0) + creditCollectedUPI;
-    const cardSales = invoices.filter((i) => i.paymentMode === "Card").reduce((s: number, i) => s + i.grandTotal, 0);
+    // Exact split breakdown into corresponding mode buckets
+    const pureCash = invoices.filter((i) => i.paymentMode === "Cash").reduce((s: number, i) => s + i.grandTotal, 0);
+    const pureUpi = invoices.filter((i) => i.paymentMode === "UPI").reduce((s: number, i) => s + i.grandTotal, 0);
+    const pureCard = invoices.filter((i) => i.paymentMode === "Card").reduce((s: number, i) => s + i.grandTotal, 0);
+
+    const splitCashPart = invoices.filter((i) => i.paymentMode === "Split").reduce((s: number, i) => s + (i.splitDetails?.cash || 0), 0);
+    const splitUpiPart = invoices.filter((i) => i.paymentMode === "Split" && i.splitDetails?.digitalMode === "UPI").reduce((s: number, i) => s + (i.splitDetails?.digitalAmount || 0), 0);
+    const splitCardPart = invoices.filter((i) => i.paymentMode === "Split" && i.splitDetails?.digitalMode === "Card").reduce((s: number, i) => s + (i.splitDetails?.digitalAmount || 0), 0);
+
+    const cashSales = pureCash + splitCashPart + creditCollectedCash;
+    const upiSales = pureUpi + splitUpiPart + creditCollectedUPI;
+    const cardSales = pureCard + splitCardPart;
 
     const currentOutstanding = customers.reduce((s: number, c) => s + c.creditBalance, 0);
     const occupiedTables = tables.filter((t) => t.status === "OCCUPIED").length;
@@ -799,6 +922,129 @@ export default function UltimateRestaurantPOS() {
       )}
 
       {/* =========================================================================
+          ADMIN ONLY BILL EDIT MODAL (WITH SPECIFIC DIGITAL MODE DROPDOWN)
+      ========================================================================= */}
+      {showBillEditModal && editingInvoice && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div className="flex items-center gap-2">
+                <FileEdit className="w-5 h-5 text-rose-600" />
+                <h3 className="font-black text-base text-slate-900">Admin Bill Editor</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowBillEditModal(false);
+                  setEditingInvoice(null);
+                }}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-2.5 bg-slate-50 rounded-xl text-xs space-y-1">
+              <p><span className="font-bold text-slate-700">Invoice:</span> {editingInvoice.invoiceNo}</p>
+              <p><span className="font-bold text-slate-700">Table:</span> {editingInvoice.table}</p>
+              <p><span className="font-bold text-slate-700">Subtotal:</span> {branding.currency} {editingInvoice.subtotal}</p>
+            </div>
+
+            <form onSubmit={handleSaveBillEdit} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Customer Name</label>
+                  <input
+                    type="text"
+                    value={editCustomerName}
+                    onChange={(e) => setEditCustomerName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border rounded-lg bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-600 block mb-1">Mobile</label>
+                  <input
+                    type="tel"
+                    value={editCustomerPhone}
+                    onChange={(e) => setEditCustomerPhone(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border rounded-lg bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Discount Amount (₹)</label>
+                <input
+                  type="number"
+                  value={editDiscountAmount}
+                  onChange={(e) => setEditDiscountAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full px-2.5 py-1.5 border rounded-lg bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Payment Method</label>
+                <select
+                  value={editPaymentMode}
+                  onChange={(e) => setEditPaymentMode(e.target.value as any)}
+                  className="w-full px-2.5 py-1.5 border rounded-lg bg-white font-bold"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI</option>
+                  <option value="Card">Card</option>
+                  <option value="Credit">Credit (Udhar)</option>
+                  <option value="Split">Split Payment</option>
+                </select>
+              </div>
+
+              {editPaymentMode === "Split" && (
+                <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600">Cash Part (₹)</label>
+                      <input
+                        type="number"
+                        value={editSplitCash}
+                        onChange={(e) => setEditSplitCash(parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1 border rounded text-xs bg-white font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600">Digital Mode</label>
+                      <select
+                        value={editSplitDigitalMode}
+                        onChange={(e) => setEditSplitDigitalMode(e.target.value as DigitalSplitMethod)}
+                        className="w-full px-2 py-1 border rounded text-xs bg-white font-bold"
+                      >
+                        <option value="UPI">UPI (QR/GPay)</option>
+                        <option value="Card">Card Swipe</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600">{editSplitDigitalMode} Part (₹)</label>
+                    <input
+                      type="number"
+                      value={editSplitDigital}
+                      onChange={(e) => setEditSplitDigital(parseFloat(e.target.value) || 0)}
+                      className="w-full px-2 py-1 border rounded text-xs bg-white font-bold"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
+              >
+                Save & Update Invoice Record
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
           RECEIVE CREDIT PAYMENT (UDHAR RECOVERY) MODAL
       ========================================================================= */}
       {showReceiveCreditModal && selectedCustForCredit && (
@@ -897,7 +1143,14 @@ export default function UltimateRestaurantPOS() {
               <div className="text-right">
                 <p>{printInvoiceData.date.split(",")[0]}</p>
                 <p>{printInvoiceData.date.split(",")[1]}</p>
-                <p className="font-bold">Mode: {printInvoiceData.paymentMode}</p>
+                <p className="font-bold">
+                  Mode: {printInvoiceData.paymentMode}
+                  {printInvoiceData.paymentMode === "Split" && printInvoiceData.splitDetails && (
+                    <span className="block text-[8px] font-normal">
+                      [Cash ₹{printInvoiceData.splitDetails.cash} + {printInvoiceData.splitDetails.digitalMode} ₹{printInvoiceData.splitDetails.digitalAmount}]
+                    </span>
+                  )}
+                </p>
               </div>
             </div>
 
@@ -1638,7 +1891,14 @@ export default function UltimateRestaurantPOS() {
                     {(["Cash", "UPI", "Card", "Credit", "Split"] as const).map((m) => (
                       <button
                         key={m}
-                        onClick={() => setActivePaymentMode(m)}
+                        onClick={() => {
+                          setActivePaymentMode(m);
+                          if (m === "Split") {
+                            const half = Math.round(finalPayable / 2);
+                            setSplitCashAmount(half.toString());
+                            setSplitDigitalAmount((finalPayable - half).toString());
+                          }
+                        }}
                         className={`py-1.5 rounded-lg border transition ${
                           activePaymentMode === m
                             ? "bg-slate-900 text-white border-slate-900 shadow-sm"
@@ -1651,7 +1911,7 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 </div>
 
-                {/* Live Screen UPI QR Box with Exact Synchronized Amount */}
+                {/* Dynamic QR Box */}
                 {activePaymentMode === "UPI" && branding.upiId && finalPayable > 0 && (
                   <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center gap-3">
                     <img
@@ -1670,22 +1930,51 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 )}
 
+                {/* ADVANCED SPLIT PAYMENT WITH DIGITAL METHOD DROPDOWN */}
                 {activePaymentMode === "Split" && (
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-xl">
-                    <input
-                      type="number"
-                      placeholder="₹ Cash Part"
-                      value={splitCashAmount}
-                      onChange={(e) => setSplitCashAmount(e.target.value)}
-                      className="w-full px-2 py-1 border rounded text-xs"
-                    />
-                    <input
-                      type="number"
-                      placeholder="₹ Online Part"
-                      value={splitOnlineAmount}
-                      onChange={(e) => setSplitOnlineAmount(e.target.value)}
-                      className="w-full px-2 py-1 border rounded text-xs"
-                    />
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex justify-between text-[11px] font-bold text-slate-700">
+                      <span>Total Bill: ₹{finalPayable}</span>
+                      <span className="text-rose-600 font-black">
+                        Difference: ₹{Math.max(0, finalPayable - ((parseFloat(splitCashAmount) || 0) + (parseFloat(splitDigitalAmount) || 0)))}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500">Cash Part (₹)</label>
+                        <input
+                          type="number"
+                          placeholder="Cash ₹"
+                          value={splitCashAmount}
+                          onChange={(e) => handleSplitCashChange(e.target.value)}
+                          className="w-full px-2.5 py-1.5 border rounded-lg text-xs bg-white font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500">Digital Method</label>
+                        <select
+                          value={splitDigitalMethod}
+                          onChange={(e) => setSplitDigitalMethod(e.target.value as DigitalSplitMethod)}
+                          className="w-full px-2.5 py-1.5 border rounded-lg text-xs bg-white font-bold"
+                        >
+                          <option value="UPI">UPI (PhonePe/GPay)</option>
+                          <option value="Card">Card Swipe</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500">{splitDigitalMethod} Part (₹)</label>
+                      <input
+                        type="number"
+                        placeholder={`${splitDigitalMethod} ₹`}
+                        value={splitDigitalAmount}
+                        onChange={(e) => handleSplitDigitalChange(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border rounded-lg text-xs bg-white font-bold"
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -2022,7 +2311,7 @@ export default function UltimateRestaurantPOS() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown (Inc. Udhar Vasooli)</h3>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown (Inc. Split & Udhar Vasooli)</h3>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
                     <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Banknote className="w-4 h-4 text-emerald-600" /> Cash Drawer:</span>
@@ -2167,7 +2456,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: CUSTOMERS CRM & UDHAR (WITH RECEIVED CREDIT SETTLEMENT) */}
+        {/* MODULE: CUSTOMERS CRM & UDHAR */}
         {activeModule === "CUSTOMERS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
@@ -2233,7 +2522,6 @@ export default function UltimateRestaurantPOS() {
               </div>
             </div>
 
-            {/* Credit Collection Audit History */}
             {creditCollections.length > 0 && (
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-1.5">
@@ -2276,7 +2564,7 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: AUDIT */}
+        {/* MODULE: AUDIT (WITH DETAILED SPLIT BREAKDOWN & ADMIN BILL EDIT) */}
         {activeModule === "AUDIT" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
@@ -2291,11 +2579,11 @@ export default function UltimateRestaurantPOS() {
                       <th className="py-2">Date & Time</th>
                       <th className="py-2">Table</th>
                       <th className="py-2">Customer</th>
-                      <th className="py-2">Mode</th>
+                      <th className="py-2">Payment Breakdown</th>
                       <th className="py-2 text-right">CGST</th>
                       <th className="py-2 text-right">SGST</th>
                       <th className="py-2 text-right">Grand Total</th>
-                      <th className="py-2 text-center">Action</th>
+                      <th className="py-2 text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2306,25 +2594,43 @@ export default function UltimateRestaurantPOS() {
                         <td className="py-3 font-semibold text-slate-700">{inv.table}</td>
                         <td className="py-3 text-slate-600">{inv.customerName || "Guest"}</td>
                         <td className="py-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
-                            {inv.paymentMode}
-                          </span>
+                          {inv.paymentMode === "Split" && inv.splitDetails ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 block w-fit">
+                              Cash: ₹{inv.splitDetails.cash} + {inv.splitDetails.digitalMode}: ₹{inv.splitDetails.digitalAmount}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
+                              {inv.paymentMode}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 text-right">{branding.currency} {inv.cgst}</td>
                         <td className="py-3 text-right">{branding.currency} {inv.sgst}</td>
                         <td className="py-3 text-right font-black text-slate-900">{branding.currency} {inv.grandTotal}</td>
                         <td className="py-3 text-center">
-                          <button
-                            onClick={() => {
-                              setPrintInvoiceData(inv);
-                              setPrintKOTData(null);
-                              setTimeout(() => window.print(), 100);
-                            }}
-                            className="p-1 hover:text-rose-600 text-slate-600"
-                            title="Reprint Bill"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => {
+                                setPrintInvoiceData(inv);
+                                setPrintKOTData(null);
+                                setTimeout(() => window.print(), 100);
+                              }}
+                              className="p-1 hover:text-rose-600 text-slate-600"
+                              title="Reprint Bill"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+
+                            {currentUserRole === "OWNER" && (
+                              <button
+                                onClick={() => handleOpenBillEdit(inv)}
+                                className="p-1 hover:text-blue-600 text-slate-600"
+                                title="Edit Bill (Admin)"
+                              >
+                                <FileEdit className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
