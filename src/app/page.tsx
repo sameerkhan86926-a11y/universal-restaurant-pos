@@ -27,6 +27,9 @@ import {
   Percent,
   Edit,
   X,
+  Lock,
+  KeyRound,
+  ShieldAlert,
 } from "lucide-react";
 
 // ================= TYPES & INTERFACES =================
@@ -137,7 +140,26 @@ export interface RestaurantBranding {
   footerNote: string;
 }
 
-// ================= DEFAULT FALLBACKS =================
+// Default Role PINs
+const defaultRolePins: Record<UserRole, string> = {
+  OWNER: "1111",
+  MANAGER: "2222",
+  CASHIER: "3333",
+  WAITER: "4444",
+  CHEF: "5555",
+  ACCOUNTANT: "6666",
+};
+
+// Role Allowed Modules Map
+const roleAllowedModules: Record<UserRole, string[]> = {
+  OWNER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "EXPENSES", "CUSTOMERS", "AUDIT", "SETTINGS"],
+  MANAGER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "CUSTOMERS", "AUDIT"],
+  CASHIER: ["POS", "TABLES", "CUSTOMERS", "AUDIT"],
+  WAITER: ["POS", "TABLES"],
+  CHEF: ["KDS"],
+  ACCOUNTANT: ["DASHBOARD", "EXPENSES", "AUDIT"],
+};
+
 const initialBranding: RestaurantBranding = {
   name: "My Restaurant & Cafe",
   tagline: "Fresh, Hot & Authentic",
@@ -156,9 +178,14 @@ const initialBranding: RestaurantBranding = {
 export default function UltimateRestaurantPOS() {
   const [isClient, setIsClient] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>("OWNER");
-  const [activeModule, setActiveModule] = useState<
-    "POS" | "DASHBOARD" | "MENU_MGMT" | "TABLES" | "KDS" | "INVENTORY" | "EXPENSES" | "CUSTOMERS" | "AUDIT" | "SETTINGS"
-  >("POS");
+  const [rolePins, setRolePins] = useState<Record<UserRole, string>>(defaultRolePins);
+  const [activeModule, setActiveModule] = useState<string>("POS");
+
+  // Role Security Modal
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [targetRole, setTargetRole] = useState<UserRole>("OWNER");
+  const [enteredPin, setEnteredPin] = useState("");
+  const [pinError, setPinError] = useState(false);
 
   // Core Data
   const [branding, setBranding] = useState<RestaurantBranding>(initialBranding);
@@ -195,12 +222,12 @@ export default function UltimateRestaurantPOS() {
   const [customerPhoneInput, setCustomerPhoneInput] = useState("");
   const [customerNameInput, setCustomerNameInput] = useState("");
 
-  // Modals & Forms State
+  // Modals
   const [showAddMenuModal, setShowAddMenuModal] = useState(false);
   const [showAddTableModal, setShowAddTableModal] = useState(false);
   const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
 
-  // New Menu Item Form States
+  // Forms
   const [newMenuName, setNewMenuName] = useState("");
   const [newMenuCategory, setNewMenuCategory] = useState("Main Course");
   const [newMenuPrice, setNewMenuPrice] = useState("");
@@ -209,11 +236,9 @@ export default function UltimateRestaurantPOS() {
   const [variantHalfPrice, setVariantHalfPrice] = useState("");
   const [variantFullPrice, setVariantFullPrice] = useState("");
 
-  // New Table Form States
   const [newTableName, setNewTableName] = useState("");
   const [newTableCapacity, setNewTableCapacity] = useState("4");
 
-  // New Inventory Form States
   const [newInvName, setNewInvName] = useState("");
   const [newInvUnit, setNewInvUnit] = useState<"kg" | "g" | "l" | "ml" | "pcs">("kg");
   const [newInvStock, setNewInvStock] = useState("");
@@ -224,7 +249,7 @@ export default function UltimateRestaurantPOS() {
   const [printInvoiceData, setPrintInvoiceData] = useState<SettledInvoice | null>(null);
   const [printKOTData, setPrintKOTData] = useState<KOTTicket | null>(null);
 
-  // Load from LocalStorage
+  // Load from Storage
   useEffect(() => {
     setIsClient(true);
     const getSaved = (k: string) => localStorage.getItem(k);
@@ -237,6 +262,7 @@ export default function UltimateRestaurantPOS() {
     if (getSaved("rms_customers")) setCustomers(JSON.parse(getSaved("rms_customers")!));
     if (getSaved("rms_invoices")) setInvoices(JSON.parse(getSaved("rms_invoices")!));
     if (getSaved("rms_kot_seq")) setKotSequence(parseInt(getSaved("rms_kot_seq")!));
+    if (getSaved("rms_role_pins")) setRolePins(JSON.parse(getSaved("rms_role_pins")!));
   }, []);
 
   const saveToDisk = (key: string, data: any) => {
@@ -244,13 +270,37 @@ export default function UltimateRestaurantPOS() {
   };
 
   const handleResetData = () => {
-    if (confirm("Are you sure you want to reset demo data? All records will be cleared for a fresh start.")) {
+    if (confirm("Reset all data to default demo state?")) {
       localStorage.clear();
       window.location.reload();
     }
   };
 
-  // Explicit TableInfo fallback
+  // Switch Role with PIN Verification
+  const requestRoleSwitch = (role: UserRole) => {
+    if (role === currentUserRole) return;
+    setTargetRole(role);
+    setEnteredPin("");
+    setPinError(false);
+    setShowPinModal(true);
+  };
+
+  const verifyPinAndSwitch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (enteredPin === rolePins[targetRole]) {
+      setCurrentUserRole(targetRole);
+      setShowPinModal(false);
+      setPinError(false);
+      // Ensure current active module is allowed for new role
+      const allowed = roleAllowedModules[targetRole];
+      if (!allowed.includes(activeModule)) {
+        setActiveModule(allowed[0]);
+      }
+    } else {
+      setPinError(true);
+    }
+  };
+
   const fallbackTable: TableInfo = {
     id: "t_def",
     name: "Table 1",
@@ -321,7 +371,7 @@ export default function UltimateRestaurantPOS() {
     updateCurrentTableCart(updatedCart);
   };
 
-  // Calculations with typed accumulator
+  // Calculations
   const cartSubtotal = useMemo(() => {
     return (currentTable.activeCart || []).reduce(
       (sum: number, item: CartItem) => sum + item.price * item.qty,
@@ -340,10 +390,14 @@ export default function UltimateRestaurantPOS() {
   const sgstAmount = Number(((taxableAmount * halfTaxRate) / 100).toFixed(2));
   const finalPayable = Math.round(taxableAmount + cgstAmount + sgstAmount);
 
+  // Reliable Universal QR Code Generator
   const upiQrUrl = useMemo(() => {
-    if (!branding.upiId || finalPayable <= 0) return "";
-    const upiUri = `upi://pay?pa=${encodeURIComponent(branding.upiId)}&pn=${encodeURIComponent(branding.name)}&am=${finalPayable}&cu=INR`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUri)}`;
+    if (!branding.upiId) return "";
+    const cleanUpi = branding.upiId.trim();
+    const cleanName = branding.name.replace(/[^a-zA-Z0-9 ]/g, "").trim();
+    const amt = finalPayable > 0 ? finalPayable : 1;
+    const upiPayload = `upi://pay?pa=${cleanUpi}&pn=${encodeURIComponent(cleanName)}&am=${amt}&cu=INR`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiPayload)}`;
   }, [branding.upiId, branding.name, finalPayable]);
 
   const dispatchKOT = () => {
@@ -606,6 +660,68 @@ export default function UltimateRestaurantPOS() {
 
   return (
     <>
+      {/* =========================================================================
+          ROLE PASSWORD / PIN VERIFICATION MODAL
+      ========================================================================= */}
+      {showPinModal && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-xs w-full shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto">
+              <Lock className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-black text-base text-slate-900">Security Verification</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Enter PIN to switch to <span className="font-bold text-slate-800">{targetRole}</span>
+              </p>
+            </div>
+
+            <form onSubmit={verifyPinAndSwitch} className="space-y-3">
+              <input
+                type="password"
+                maxLength={6}
+                required
+                autoFocus
+                placeholder="Enter 4-digit PIN"
+                value={enteredPin}
+                onChange={(e) => {
+                  setEnteredPin(e.target.value);
+                  setPinError(false);
+                }}
+                className="w-full text-center text-lg tracking-widest font-black py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+
+              {pinError && (
+                <p className="text-[11px] text-red-600 font-bold flex items-center justify-center gap-1">
+                  <ShieldAlert className="w-3.5 h-3.5" /> Incorrect PIN. Access Denied.
+                </p>
+              )}
+
+              <div className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded-lg text-left">
+                <span className="font-bold block text-slate-500">Default Demo PINs:</span>
+                Owner: 1111 | Manager: 2222<br />Cashier: 3333 | Waiter: 4444<br />Chef: 5555 | Accountant: 6666
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(false)}
+                  className="flex-1 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 text-xs font-bold text-white bg-slate-900 rounded-xl hover:bg-slate-800"
+                >
+                  Authorize
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* THERMAL PRINTER RECEIPT / KOT */}
       <div id="thermal-receipt" className="hidden print:block p-2 max-w-[80mm] mx-auto text-black font-mono text-[11px] leading-tight">
         {printInvoiceData && (
@@ -682,8 +798,8 @@ export default function UltimateRestaurantPOS() {
 
             {branding.upiId && (
               <div className="text-center pt-2 border-t border-dashed border-black mt-2">
-                <p className="text-[9px] font-bold">Scan to Pay via PhonePe / GPay / Paytm</p>
-                <img src={upiQrUrl} alt="UPI QR" className="w-24 h-24 mx-auto my-1" />
+                <p className="text-[9px] font-bold mb-1">Scan to Pay via UPI</p>
+                <img src={upiQrUrl} alt="UPI QR" className="w-24 h-24 mx-auto my-1 border p-0.5" />
                 <p className="text-[8px]">{branding.upiId}</p>
               </div>
             )}
@@ -985,7 +1101,7 @@ export default function UltimateRestaurantPOS() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               onClick={handleResetData}
               title="Reset all demo data"
@@ -995,56 +1111,64 @@ export default function UltimateRestaurantPOS() {
               <span className="hidden sm:inline">Reset Demo</span>
             </button>
 
-            <select
-              value={currentUserRole}
-              onChange={(e) => setCurrentUserRole(e.target.value as UserRole)}
-              className="bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer"
-            >
-              <option value="OWNER" className="text-slate-900">Owner (Full Admin)</option>
-              <option value="MANAGER" className="text-slate-900">Manager</option>
-              <option value="CASHIER" className="text-slate-900">Cashier</option>
-              <option value="WAITER" className="text-slate-900">Waiter</option>
-              <option value="CHEF" className="text-slate-900">Chef (KDS)</option>
-              <option value="ACCOUNTANT" className="text-slate-900">Accountant</option>
-            </select>
+            {/* Password-Protected Role Switcher */}
+            <div className="flex items-center gap-1.5 bg-black/20 p-1 rounded-xl">
+              <span className="text-[10px] uppercase font-bold text-white/60 px-1 hidden sm:inline flex items-center gap-0.5">
+                <Lock className="w-2.5 h-2.5" /> Role:
+              </span>
+              <select
+                value={currentUserRole}
+                onChange={(e) => requestRoleSwitch(e.target.value as UserRole)}
+                className="bg-white/20 hover:bg-white/30 text-white font-bold text-xs py-1 px-2 rounded-lg border border-white/20 focus:outline-none cursor-pointer"
+              >
+                <option value="OWNER" className="text-slate-900">Owner (Admin)</option>
+                <option value="MANAGER" className="text-slate-900">Manager</option>
+                <option value="CASHIER" className="text-slate-900">Cashier</option>
+                <option value="WAITER" className="text-slate-900">Waiter</option>
+                <option value="CHEF" className="text-slate-900">Chef (KDS)</option>
+                <option value="ACCOUNTANT" className="text-slate-900">Accountant</option>
+              </select>
+            </div>
           </div>
         </header>
 
-        {/* Global Navigation */}
+        {/* Global Navigation - STRICT ROLE PERMISSION FILTER */}
         <nav className="bg-white border-b border-slate-200 px-4 md:px-6 flex gap-1 overflow-x-auto text-xs font-bold">
           {[
             { id: "POS", label: "POS Billing", icon: ShoppingBag },
-            { id: "MENU_MGMT", label: "Menu Catalog & Add Items", icon: Edit },
-            { id: "TABLES", label: "Tables Floor Plan", icon: UtensilsCrossed },
+            { id: "MENU_MGMT", label: "Menu Catalog", icon: Edit },
+            { id: "TABLES", label: "Tables Floor", icon: UtensilsCrossed },
             { id: "KDS", label: "Kitchen KDS", icon: ChefHat },
-            { id: "INVENTORY", label: "Stock & Ingredients", icon: Boxes },
+            { id: "INVENTORY", label: "Inventory Stock", icon: Boxes },
             { id: "DASHBOARD", label: "Executive Analytics", icon: LayoutDashboard },
             { id: "EXPENSES", label: "Expenses & P&L", icon: Wallet },
-            { id: "CUSTOMERS", label: "CRM & Udhar Ledger", icon: Users },
+            { id: "CUSTOMERS", label: "CRM & Udhar", icon: Users },
             { id: "AUDIT", label: "Invoices Audit", icon: Receipt },
             { id: "SETTINGS", label: "Branding & GST", icon: Settings },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeModule === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveModule(tab.id as any)}
-                className={`py-3 px-3.5 flex items-center gap-2 border-b-2 whitespace-nowrap transition ${
-                  isActive
-                    ? "border-rose-600 text-rose-600 font-extrabold"
-                    : "border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300"
-                }`}
-                style={{
-                  borderColor: isActive ? branding.primaryColor : undefined,
-                  color: isActive ? branding.primaryColor : undefined,
-                }}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+          ]
+            .filter((tab) => roleAllowedModules[currentUserRole].includes(tab.id))
+            .map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeModule === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveModule(tab.id as any)}
+                  className={`py-3 px-3.5 flex items-center gap-2 border-b-2 whitespace-nowrap transition ${
+                    isActive
+                      ? "border-rose-600 text-rose-600 font-extrabold"
+                      : "border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300"
+                  }`}
+                  style={{
+                    borderColor: isActive ? branding.primaryColor : undefined,
+                    color: isActive ? branding.primaryColor : undefined,
+                  }}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
         </nav>
 
         {/* MODULE: MENU CATALOG */}
@@ -1118,12 +1242,14 @@ export default function UltimateRestaurantPOS() {
                     <UtensilsCrossed className="w-3.5 h-3.5" /> Dining Table / Takeaway
                   </span>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowAddTableModal(true)}
-                      className="text-xs text-rose-600 font-bold hover:underline flex items-center gap-0.5"
-                    >
-                      <Plus className="w-3 h-3" /> Add Table
-                    </button>
+                    {["OWNER", "MANAGER"].includes(currentUserRole) && (
+                      <button
+                        onClick={() => setShowAddTableModal(true)}
+                        className="text-xs text-rose-600 font-bold hover:underline flex items-center gap-0.5"
+                      >
+                        <Plus className="w-3 h-3" /> Add Table
+                      </button>
+                    )}
                     <span className="text-xs font-black text-slate-800">| {currentTable.name} Active</span>
                   </div>
                 </div>
@@ -1162,12 +1288,14 @@ export default function UltimateRestaurantPOS() {
                       className="w-full pl-9 pr-3 py-2 text-xs border rounded-xl focus:outline-none"
                     />
                   </div>
-                  <button
-                    onClick={() => setShowAddMenuModal(true)}
-                    className="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> New Dish
-                  </button>
+                  {["OWNER", "MANAGER"].includes(currentUserRole) && (
+                    <button
+                      onClick={() => setShowAddMenuModal(true)}
+                      className="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> New Dish
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -1240,7 +1368,7 @@ export default function UltimateRestaurantPOS() {
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <div>
                     <h3 className="font-black text-base text-slate-900">Order Terminal</h3>
-                    <p className="text-[10px] text-slate-500">{currentTable.name} • Waiter: {currentUserRole}</p>
+                    <p className="text-[10px] text-slate-500">{currentTable.name} • Active Staff: {currentUserRole}</p>
                   </div>
                   {currentTable.activeCart.length > 0 && (
                     <button
@@ -1306,6 +1434,7 @@ export default function UltimateRestaurantPOS() {
               </div>
 
               <div className="pt-3 border-t border-slate-200 space-y-2 text-xs">
+                {/* Discount */}
                 <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl">
                   <span className="text-[10px] font-bold text-slate-500 flex items-center gap-0.5"><Percent className="w-3 h-3" /> Discount:</span>
                   <input
@@ -1352,6 +1481,7 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 </div>
 
+                {/* Modes */}
                 <div>
                   <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Payment Method</span>
                   <div className="grid grid-cols-5 gap-1 text-[11px] font-bold">
@@ -1370,6 +1500,24 @@ export default function UltimateRestaurantPOS() {
                     ))}
                   </div>
                 </div>
+
+                {/* Live Screen UPI QR Box */}
+                {activePaymentMode === "UPI" && branding.upiId && (
+                  <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center gap-3">
+                    <img
+                      src={upiQrUrl}
+                      alt="Scan UPI QR"
+                      className="w-16 h-16 bg-white p-1 rounded-lg border border-emerald-200 shadow-sm"
+                    />
+                    <div className="text-[11px]">
+                      <span className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[9px] font-black uppercase">
+                        Instant Dynamic QR
+                      </span>
+                      <p className="font-extrabold text-slate-900 mt-1">Scan to Pay Exact Amount</p>
+                      <p className="text-emerald-700 font-mono text-[10px]">{branding.upiId}</p>
+                    </div>
+                  </div>
+                )}
 
                 {activePaymentMode === "Split" && (
                   <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded-xl">
@@ -1420,12 +1568,14 @@ export default function UltimateRestaurantPOS() {
                 <h2 className="text-xl font-black text-slate-900">Floor Tables & Layout</h2>
                 <p className="text-xs text-slate-500">Add, remove, and monitor live occupancy</p>
               </div>
-              <button
-                onClick={() => setShowAddTableModal(true)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
-              >
-                <Plus className="w-4 h-4" /> Add New Table
-              </button>
+              {["OWNER", "MANAGER"].includes(currentUserRole) && (
+                <button
+                  onClick={() => setShowAddTableModal(true)}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
+                >
+                  <Plus className="w-4 h-4" /> Add New Table
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1449,9 +1599,11 @@ export default function UltimateRestaurantPOS() {
                           >
                             {tbl.status}
                           </span>
-                          <button onClick={() => handleDeleteTable(tbl.id)} className="text-slate-300 hover:text-red-500 p-0.5">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {["OWNER", "MANAGER"].includes(currentUserRole) && (
+                            <button onClick={() => handleDeleteTable(tbl.id)} className="text-slate-300 hover:text-red-500 p-0.5">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                       <p className="text-xs text-slate-500">Seating: {tbl.capacity} Persons</p>
@@ -1966,9 +2118,9 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: SETTINGS */}
+        {/* MODULE: SETTINGS (OWNER ONLY) */}
         {activeModule === "SETTINGS" && (
-          <main className="p-4 md:p-6 max-w-4xl mx-auto w-full">
+          <main className="p-4 md:p-6 max-w-4xl mx-auto w-full space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <h2 className="text-xl font-black text-slate-900 mb-1">Branding, UPI & Tax Settings</h2>
               <p className="text-xs text-slate-500 mb-6">Thermal receipt layout, GSTIN, FSSAI & UPI configuration</p>
@@ -2018,7 +2170,7 @@ export default function UltimateRestaurantPOS() {
                   />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-500 uppercase block mb-1">UPI VPA (PhonePe/GPay for QR)</label>
+                  <label className="font-bold text-slate-500 uppercase block mb-1">UPI VPA (PhonePe/GPay VPA for QR)</label>
                   <input
                     type="text"
                     value={branding.upiId}
@@ -2059,6 +2211,33 @@ export default function UltimateRestaurantPOS() {
                   </button>
                 </div>
               </form>
+            </div>
+
+            {/* Custom Role PINs Configuration (Owner Only) */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2 mb-1">
+                <KeyRound className="w-4 h-4 text-rose-600" /> Employee Role Security PINs
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">Set 4-digit security PIN for each role to prevent unauthorized access</p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                {(["OWNER", "MANAGER", "CASHIER", "WAITER", "CHEF", "ACCOUNTANT"] as UserRole[]).map((r) => (
+                  <div key={r} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <label className="font-bold text-slate-600 uppercase block mb-1 text-[10px]">{r} PIN</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={rolePins[r]}
+                      onChange={(e) => {
+                        const updated = { ...rolePins, [r]: e.target.value };
+                        setRolePins(updated);
+                        saveToDisk("rms_role_pins", updated);
+                      }}
+                      className="w-full px-2 py-1.5 border rounded-lg bg-white font-mono font-bold text-center"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </main>
         )}
