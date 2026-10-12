@@ -414,15 +414,15 @@ export default function UltimateRestaurantPOS() {
   const sgstAmount = Number(((taxableAmount * halfTaxRate) / 100).toFixed(2));
   const finalPayable = Math.round(taxableAmount + cgstAmount + sgstAmount);
 
-  // Reliable Universal QR Code Generator
-  const upiQrUrl = useMemo(() => {
+  // Reliable Universal Dynamic QR Code Generator with Strict Amount Passing
+  const getUpiQrUrl = (amount: number) => {
     if (!branding.upiId) return "";
     const cleanUpi = branding.upiId.trim();
     const cleanName = branding.name.replace(/[^a-zA-Z0-9 ]/g, "").trim();
-    const amt = finalPayable > 0 ? finalPayable : 1;
-    const upiPayload = `upi://pay?pa=${cleanUpi}&pn=${encodeURIComponent(cleanName)}&am=${amt}&cu=INR`;
+    const exactAmount = Math.max(1, Math.round(amount));
+    const upiPayload = `upi://pay?pa=${cleanUpi}&pn=${encodeURIComponent(cleanName)}&am=${exactAmount}&cu=INR`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiPayload)}`;
-  }, [branding.upiId, branding.name, finalPayable]);
+  };
 
   const dispatchKOT = () => {
     if (currentTable.activeCart.length === 0) return;
@@ -558,7 +558,6 @@ export default function UltimateRestaurantPOS() {
       return;
     }
 
-    // 1. Update customer credit balance
     const updatedCustList = customers.map((c) => {
       if (c.phone === selectedCustForCredit.phone) {
         return {
@@ -571,7 +570,6 @@ export default function UltimateRestaurantPOS() {
     setCustomers(updatedCustList);
     saveToDisk("rms_customers", updatedCustList);
 
-    // 2. Add to Credit Collections Log
     const collectionRecord: CreditCollection = {
       id: `CR-REC-${Date.now().toString().slice(-6)}`,
       date: new Date().toLocaleString(),
@@ -595,7 +593,6 @@ export default function UltimateRestaurantPOS() {
     const totalSales = invoices.reduce((s: number, i) => s + i.grandTotal, 0);
     const totalExpense = expenses.reduce((s: number, e) => s + e.amount, 0);
 
-    // Add collected credit into respective payment methods
     const creditCollectedCash = creditCollections.filter((c) => c.paymentMode === "Cash").reduce((s: number, c) => s + c.amount, 0);
     const creditCollectedUPI = creditCollections.filter((c) => c.paymentMode === "UPI").reduce((s: number, c) => s + c.amount, 0);
 
@@ -603,7 +600,6 @@ export default function UltimateRestaurantPOS() {
     const upiSales = invoices.filter((i) => i.paymentMode === "UPI").reduce((s: number, i) => s + i.grandTotal, 0) + creditCollectedUPI;
     const cardSales = invoices.filter((i) => i.paymentMode === "Card").reduce((s: number, i) => s + i.grandTotal, 0);
 
-    // Current outstanding credit
     const currentOutstanding = customers.reduce((s: number, c) => s + c.creditBalance, 0);
     const occupiedTables = tables.filter((t) => t.status === "OCCUPIED").length;
     const lowStockCount = inventory.filter((i) => i.currentStock <= i.minStockLevel).length;
@@ -955,8 +951,14 @@ export default function UltimateRestaurantPOS() {
 
             {branding.upiId && (
               <div className="text-center pt-2 border-t border-dashed border-black mt-2">
-                <p className="text-[9px] font-bold mb-1">Scan to Pay via UPI</p>
-                <img src={upiQrUrl} alt="UPI QR" className="w-24 h-24 mx-auto my-1 border p-0.5" />
+                <p className="text-[9px] font-bold mb-1">
+                  Scan to Pay exact {branding.currency} {printInvoiceData.grandTotal} via UPI
+                </p>
+                <img
+                  src={getUpiQrUrl(printInvoiceData.grandTotal)}
+                  alt="UPI QR"
+                  className="w-24 h-24 mx-auto my-1 border p-0.5"
+                />
                 <p className="text-[8px]">{branding.upiId}</p>
               </div>
             )}
@@ -1649,11 +1651,11 @@ export default function UltimateRestaurantPOS() {
                   </div>
                 </div>
 
-                {/* Live Screen UPI QR Box */}
-                {activePaymentMode === "UPI" && branding.upiId && (
+                {/* Live Screen UPI QR Box with Exact Synchronized Amount */}
+                {activePaymentMode === "UPI" && branding.upiId && finalPayable > 0 && (
                   <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center gap-3">
                     <img
-                      src={upiQrUrl}
+                      src={getUpiQrUrl(finalPayable)}
                       alt="Scan UPI QR"
                       className="w-16 h-16 bg-white p-1 rounded-lg border border-emerald-200 shadow-sm"
                     />
@@ -1663,6 +1665,7 @@ export default function UltimateRestaurantPOS() {
                       </span>
                       <p className="font-extrabold text-slate-900 mt-1">Scan to Pay Exact Amount</p>
                       <p className="text-emerald-700 font-mono text-[10px]">{branding.upiId}</p>
+                      <p className="font-black text-xs text-slate-900 mt-0.5">Payable: {branding.currency} {finalPayable}</p>
                     </div>
                   </div>
                 )}
