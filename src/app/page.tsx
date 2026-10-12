@@ -34,13 +34,18 @@ import {
   FileEdit,
   Download,
   Flame,
-  Wine,
-  Cake,
   PauseCircle,
   PlayCircle,
   Award,
-  Building2,
   FileSpreadsheet,
+  Share2,
+  Tag,
+  ArrowRightLeft,
+  Merge,
+  UserCheck,
+  CalendarCheck,
+  AlertOctagon,
+  StickyNote,
 } from "lucide-react";
 
 // ================= TYPES & INTERFACES =================
@@ -120,6 +125,17 @@ export interface InventoryItem {
   costPerUnit: number;
 }
 
+export interface WastageRecord {
+  id: string;
+  date: string;
+  ingredientName: string;
+  qty: number;
+  unit: string;
+  costLoss: number;
+  reason: string;
+  reportedBy: string;
+}
+
 export interface CustomerProfile {
   phone: string;
   name: string;
@@ -139,6 +155,23 @@ export interface CreditCollection {
   amount: number;
   paymentMode: "Cash" | "UPI";
   collectedBy: string;
+}
+
+export interface CouponCode {
+  code: string;
+  discountType: "FLAT" | "PERCENT";
+  discountValue: number;
+  minOrderValue: number;
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: string;
+  monthlySalary: number;
+  status: "CHECKED_IN" | "CHECKED_OUT";
+  lastCheckIn?: string;
+  advances: { date: string; amount: number; reason: string }[];
 }
 
 export interface SplitPaymentDetail {
@@ -194,12 +227,12 @@ const defaultRolePins: Record<UserRole, string> = {
 };
 
 const roleAllowedModules: Record<UserRole, string[]> = {
-  OWNER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "EXPENSES", "CUSTOMERS", "AUDIT", "EOD", "SETTINGS"],
-  MANAGER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "CUSTOMERS", "AUDIT", "EOD"],
+  OWNER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "EXPENSES", "STAFF", "CUSTOMERS", "AUDIT", "EOD", "SETTINGS"],
+  MANAGER: ["POS", "MENU_MGMT", "TABLES", "KDS", "INVENTORY", "DASHBOARD", "STAFF", "CUSTOMERS", "AUDIT", "EOD"],
   CASHIER: ["POS", "TABLES", "CUSTOMERS", "AUDIT", "EOD"],
   WAITER: ["POS", "TABLES"],
   CHEF: ["KDS"],
-  ACCOUNTANT: ["DASHBOARD", "EXPENSES", "AUDIT", "EOD"],
+  ACCOUNTANT: ["DASHBOARD", "EXPENSES", "STAFF", "AUDIT", "EOD"],
 };
 
 const initialBranding: RestaurantBranding = {
@@ -235,8 +268,23 @@ export default function UltimateRestaurantPOS() {
   const [receivedAmountInput, setReceivedAmountInput] = useState("");
   const [receivedPaymentMode, setReceivedPaymentMode] = useState<"Cash" | "UPI">("Cash");
 
-  // Digital Self-Menu Preview Modal
-  const [showQrMenuModal, setShowQrMenuModal] = useState(false);
+  // Table Shift / Merge Modals
+  const [showShiftTableModal, setShowShiftTableModal] = useState(false);
+  const [showMergeTableModal, setShowMergeTableModal] = useState(false);
+  const [targetShiftTableId, setTargetShiftTableId] = useState("");
+  const [targetMergeTableId, setTargetMergeTableId] = useState("");
+
+  // Wastage Entry Modal
+  const [showWastageModal, setShowWastageModal] = useState(false);
+  const [selectedWastageInvId, setSelectedWastageInvId] = useState("");
+  const [wastageQtyInput, setWastageQtyInput] = useState("");
+  const [wastageReasonInput, setWastageReasonInput] = useState("");
+
+  // Staff Advance Modal
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState("");
+  const [advanceAmountInput, setAdvanceAmountInput] = useState("");
+  const [advanceReasonInput, setAdvanceReasonInput] = useState("");
 
   // Admin Bill Edit Modal States
   const [showBillEditModal, setShowBillEditModal] = useState(false);
@@ -269,12 +317,21 @@ export default function UltimateRestaurantPOS() {
     { id: "inv-1", name: "Paneer", unit: "kg", currentStock: 5.0, minStockLevel: 2.0, costPerUnit: 340 },
     { id: "inv-2", name: "Milk", unit: "l", currentStock: 8.0, minStockLevel: 3.0, costPerUnit: 64 },
   ]);
+  const [wastages, setWastages] = useState<WastageRecord[]>([]);
   const [activeKOTs, setActiveKOTs] = useState<KOTTicket[]>([]);
   const [kotSequence, setKotSequence] = useState<number>(101);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [creditCollections, setCreditCollections] = useState<CreditCollection[]>([]);
   const [invoices, setInvoices] = useState<SettledInvoice[]>([]);
+  const [coupons, setCoupons] = useState<CouponCode[]>([
+    { code: "FLAT50", discountType: "FLAT", discountValue: 50, minOrderValue: 299 },
+    { code: "WELCOME10", discountType: "PERCENT", discountValue: 10, minOrderValue: 200 },
+  ]);
+  const [staffList, setStaffList] = useState<StaffMember[]>([
+    { id: "st-1", name: "Ramesh Sharma", role: "Head Chef", monthlySalary: 25000, status: "CHECKED_IN", advances: [] },
+    { id: "st-2", name: "Vikram Kumar", role: "Captain / Waiter", monthlySalary: 16000, status: "CHECKED_IN", advances: [] },
+  ]);
   const [openingFloat, setOpeningFloat] = useState<number>(1000);
 
   // POS State
@@ -285,6 +342,8 @@ export default function UltimateRestaurantPOS() {
 
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [discountFlat, setDiscountFlat] = useState<number>(0);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponCode | null>(null);
   const [redeemPoints, setRedeemPoints] = useState<boolean>(false);
   const [activePaymentMode, setActivePaymentMode] = useState<"Cash" | "UPI" | "Card" | "Credit" | "Split">("UPI");
 
@@ -329,6 +388,7 @@ export default function UltimateRestaurantPOS() {
   const [printInvoiceData, setPrintInvoiceData] = useState<SettledInvoice | null>(null);
   const [printKOTData, setPrintKOTData] = useState<KOTTicket | null>(null);
   const [printEODSnapshot, setPrintEODSnapshot] = useState<any>(null);
+  const [printContainerLabel, setPrintContainerLabel] = useState<any>(null);
 
   // Load from Storage
   useEffect(() => {
@@ -338,11 +398,14 @@ export default function UltimateRestaurantPOS() {
     if (getSaved("rms_tables")) setTables(JSON.parse(getSaved("rms_tables")!));
     if (getSaved("rms_menu")) setMenu(JSON.parse(getSaved("rms_menu")!));
     if (getSaved("rms_inventory")) setInventory(JSON.parse(getSaved("rms_inventory")!));
+    if (getSaved("rms_wastages")) setWastages(JSON.parse(getSaved("rms_wastages")!));
     if (getSaved("rms_kots")) setActiveKOTs(JSON.parse(getSaved("rms_kots")!));
     if (getSaved("rms_expenses")) setExpenses(JSON.parse(getSaved("rms_expenses")!));
     if (getSaved("rms_customers")) setCustomers(JSON.parse(getSaved("rms_customers")!));
     if (getSaved("rms_credit_collections")) setCreditCollections(JSON.parse(getSaved("rms_credit_collections")!));
     if (getSaved("rms_invoices")) setInvoices(JSON.parse(getSaved("rms_invoices")!));
+    if (getSaved("rms_coupons")) setCoupons(JSON.parse(getSaved("rms_coupons")!));
+    if (getSaved("rms_staff")) setStaffList(JSON.parse(getSaved("rms_staff")!));
     if (getSaved("rms_kot_seq")) setKotSequence(parseInt(getSaved("rms_kot_seq")!));
     if (getSaved("rms_role_pins")) setRolePins(JSON.parse(getSaved("rms_role_pins")!));
     if (getSaved("rms_opening_float")) setOpeningFloat(parseFloat(getSaved("rms_opening_float")!));
@@ -404,7 +467,6 @@ export default function UltimateRestaurantPOS() {
     return tables.find((t) => t.id === selectedTableId) || tables[0] || fallbackTable;
   }, [tables, selectedTableId]);
 
-  // Lookup existing Customer profile
   const matchedCustomer = useMemo(() => {
     if (!customerPhoneInput) return null;
     return customers.find((c) => c.phone.trim() === customerPhoneInput.trim()) || null;
@@ -438,7 +500,79 @@ export default function UltimateRestaurantPOS() {
     saveToDisk("rms_tables", updated);
   };
 
-  // Park (Hold) & Resume Order
+  // Table Transfer Logic
+  const handleShiftTable = () => {
+    if (!targetShiftTableId || targetShiftTableId === selectedTableId) return;
+    const targetTable = tables.find((t) => t.id === targetShiftTableId);
+    if (!targetTable || targetTable.activeCart.length > 0) {
+      alert("Target table must be Available/Empty to shift!");
+      return;
+    }
+
+    const updated = tables.map((t) => {
+      if (t.id === targetShiftTableId) {
+        return {
+          ...t,
+          activeCart: currentTable.activeCart,
+          status: "OCCUPIED" as const,
+          customerName: currentTable.customerName,
+          customerPhone: currentTable.customerPhone,
+        };
+      }
+      if (t.id === selectedTableId) {
+        return {
+          ...t,
+          activeCart: [],
+          status: "AVAILABLE" as const,
+          customerName: undefined,
+          customerPhone: undefined,
+        };
+      }
+      return t;
+    });
+
+    setTables(updated);
+    saveToDisk("rms_tables", updated);
+    setSelectedTableId(targetShiftTableId);
+    setShowShiftTableModal(false);
+    alert(`Order shifted to ${targetTable.name}!`);
+  };
+
+  // Table Merge Logic
+  const handleMergeTable = () => {
+    if (!targetMergeTableId || targetMergeTableId === selectedTableId) return;
+    const targetTable = tables.find((t) => t.id === targetMergeTableId);
+    if (!targetTable || targetTable.activeCart.length === 0) {
+      alert("Selected table to merge with has no items!");
+      return;
+    }
+
+    const mergedCart = [...currentTable.activeCart, ...targetTable.activeCart];
+
+    const updated = tables.map((t) => {
+      if (t.id === selectedTableId) {
+        return {
+          ...t,
+          activeCart: mergedCart,
+          status: "OCCUPIED" as const,
+        };
+      }
+      if (t.id === targetMergeTableId) {
+        return {
+          ...t,
+          activeCart: [],
+          status: "AVAILABLE" as const,
+        };
+      }
+      return t;
+    });
+
+    setTables(updated);
+    saveToDisk("rms_tables", updated);
+    setShowMergeTableModal(false);
+    alert(`Orders merged into ${currentTable.name}!`);
+  };
+
   const handleParkOrder = () => {
     if (currentTable.activeCart.length === 0) return;
     const updated = tables.map((t) => {
@@ -516,7 +650,7 @@ export default function UltimateRestaurantPOS() {
     updateCurrentTableCart(updatedCart);
   };
 
-  // Calculations with Loyalty Points
+  // Calculations with Coupons & Loyalty Points
   const cartSubtotal = useMemo(() => {
     return (currentTable.activeCart || []).reduce(
       (sum: number, item: CartItem) => sum + item.price * item.qty,
@@ -524,10 +658,16 @@ export default function UltimateRestaurantPOS() {
     );
   }, [currentTable.activeCart]);
 
+  const couponDiscount = useMemo(() => {
+    if (!appliedCoupon || cartSubtotal < appliedCoupon.minOrderValue) return 0;
+    if (appliedCoupon.discountType === "FLAT") return appliedCoupon.discountValue;
+    return Math.round((cartSubtotal * appliedCoupon.discountValue) / 100);
+  }, [appliedCoupon, cartSubtotal]);
+
   const discountAmount = useMemo(() => {
     if (discountPercent > 0) return (cartSubtotal * discountPercent) / 100;
-    return Math.min(discountFlat, cartSubtotal);
-  }, [cartSubtotal, discountPercent, discountFlat]);
+    return Math.min(discountFlat + couponDiscount, cartSubtotal);
+  }, [cartSubtotal, discountPercent, discountFlat, couponDiscount]);
 
   const pointsDiscount = useMemo(() => {
     if (!redeemPoints || !matchedCustomer) return 0;
@@ -539,6 +679,21 @@ export default function UltimateRestaurantPOS() {
   const cgstAmount = Number(((taxableAmount * halfTaxRate) / 100).toFixed(2));
   const sgstAmount = Number(((taxableAmount * halfTaxRate) / 100).toFixed(2));
   const finalPayable = Math.round(taxableAmount + cgstAmount + sgstAmount);
+
+  const handleApplyCoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    const c = coupons.find((cp) => cp.code.toUpperCase() === couponInput.trim().toUpperCase());
+    if (!c) {
+      alert("Invalid coupon code!");
+      return;
+    }
+    if (cartSubtotal < c.minOrderValue) {
+      alert(`Minimum order value of ₹${c.minOrderValue} required for this coupon!`);
+      return;
+    }
+    setAppliedCoupon(c);
+    alert(`Coupon ${c.code} Applied Successfully!`);
+  };
 
   const handleSplitCashChange = (val: string) => {
     setSplitCashAmount(val);
@@ -561,6 +716,33 @@ export default function UltimateRestaurantPOS() {
     const exactAmount = Math.max(1, Math.round(amount));
     const upiPayload = `upi://pay?pa=${cleanUpi}&pn=${encodeURIComponent(cleanName)}&am=${exactAmount}&cu=INR`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiPayload)}`;
+  };
+
+  // WhatsApp Message Generator
+  const sendWhatsAppBill = (inv: SettledInvoice) => {
+    const phone = inv.customerPhone?.replace(/[^0-9]/g, "");
+    if (!phone || phone.length < 10) {
+      alert("Customer mobile number not found or invalid!");
+      return;
+    }
+
+    const itemsSummary = inv.items.map((i) => `• ${i.name} x ${i.qty} = ₹${i.price * i.qty}`).join("\n");
+    const msg = `*${branding.name.toUpperCase()}*\n_${branding.tagline}_\n\n*Bill Receipt # ${inv.invoiceNo}*\nDate: ${inv.date}\nGuest: ${inv.customerName || "Guest"}\nTable: ${inv.table}\n\n*Items Ordered:*\n${itemsSummary}\n\n*Subtotal:* ₹${inv.subtotal}\n*Discount:* ₹${inv.discount}\n*Grand Total:* ₹${inv.grandTotal}\n*Payment Mode:* ${inv.paymentMode}\n\n${branding.footerNote}\nThank you! Visit again.`;
+
+    const formattedPhone = phone.length === 10 ? `91${phone}` : phone;
+    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  const sendWhatsAppCreditReminder = (cust: CustomerProfile) => {
+    const phone = cust.phone.replace(/[^0-9]/g, "");
+    if (!phone || phone.length < 10) {
+      alert("Mobile number invalid!");
+      return;
+    }
+
+    const msg = `Dear *${cust.name}*,\nGreetings from *${branding.name}*!\n\nThis is a polite reminder that your pending credit balance is *₹${cust.creditBalance}*.\n\nKindly clear this payment via UPI (${branding.upiId}) or visit our restaurant.\nThank you!`;
+    const formattedPhone = phone.length === 10 ? `91${phone}` : phone;
+    window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
   const dispatchKOT = () => {
@@ -591,6 +773,7 @@ export default function UltimateRestaurantPOS() {
     setPrintKOTData(newKOT);
     setPrintInvoiceData(null);
     setPrintEODSnapshot(null);
+    setPrintContainerLabel(null);
     setTimeout(() => window.print(), 150);
   };
 
@@ -632,7 +815,6 @@ export default function UltimateRestaurantPOS() {
       cashier: currentUserRole,
     };
 
-    // Auto Deduct Recipe Ingredients
     let updatedInventory = [...inventory];
     currentTable.activeCart.forEach((cItem) => {
       const originalMenu = menu.find((m) => m.id === cItem.itemId);
@@ -649,7 +831,6 @@ export default function UltimateRestaurantPOS() {
     setInventory(updatedInventory);
     saveToDisk("rms_inventory", updatedInventory);
 
-    // Update Customer CRM, Loyalty Points & Credit Balance
     if (customerPhoneInput) {
       const existingCust = customers.find((c) => c.phone === customerPhoneInput);
       let updatedCustList = [...customers];
@@ -680,7 +861,6 @@ export default function UltimateRestaurantPOS() {
     setInvoices(updatedInvoices);
     saveToDisk("rms_invoices", updatedInvoices);
 
-    // Free the active table
     const updatedTables = tables.map((t) => {
       if (t.id === selectedTableId) {
         return {
@@ -703,8 +883,10 @@ export default function UltimateRestaurantPOS() {
     setPrintInvoiceData(invoice);
     setPrintKOTData(null);
     setPrintEODSnapshot(null);
+    setPrintContainerLabel(null);
     setDiscountPercent(0);
     setDiscountFlat(0);
+    setAppliedCoupon(null);
     setRedeemPoints(false);
     setSplitCashAmount("");
     setSplitDigitalAmount("");
@@ -716,7 +898,101 @@ export default function UltimateRestaurantPOS() {
     setTimeout(() => window.print(), 150);
   };
 
-  // Udhar Payment Recovery
+  // Wastage Entry Handler
+  const handleRecordWastage = (e: React.FormEvent) => {
+    e.preventDefault();
+    const inv = inventory.find((i) => i.id === selectedWastageInvId);
+    if (!inv || !wastageQtyInput) return;
+
+    const q = parseFloat(wastageQtyInput);
+    if (q <= 0 || q > inv.currentStock) {
+      alert("Invalid wastage quantity!");
+      return;
+    }
+
+    const loss = parseFloat((q * inv.costPerUnit).toFixed(2));
+
+    const newRecord: WastageRecord = {
+      id: `WST-${Date.now().toString().slice(-6)}`,
+      date: new Date().toLocaleDateString(),
+      ingredientName: inv.name,
+      qty: q,
+      unit: inv.unit,
+      costLoss: loss,
+      reason: wastageReasonInput || "Expired / Spoiled",
+      reportedBy: currentUserRole,
+    };
+
+    const updatedInv = inventory.map((i) => (i.id === inv.id ? { ...i, currentStock: parseFloat((i.currentStock - q).toFixed(2)) } : i));
+    setInventory(updatedInv);
+    saveToDisk("rms_inventory", updatedInv);
+
+    const updatedWastages = [newRecord, ...wastages];
+    setWastages(updatedWastages);
+    saveToDisk("rms_wastages", updatedWastages);
+
+    alert(`Wastage of ${q} ${inv.unit} ${inv.name} recorded (Loss: ₹${loss})!`);
+    setShowWastageModal(false);
+    setWastageQtyInput("");
+    setWastageReasonInput("");
+  };
+
+  // Staff Attendance & Advance Handlers
+  const toggleStaffCheckIn = (id: string) => {
+    const updated = staffList.map((s) => {
+      if (s.id === id) {
+        const nextStatus = s.status === "CHECKED_IN" ? ("CHECKED_OUT" as const) : ("CHECKED_IN" as const);
+        return {
+          ...s,
+          status: nextStatus,
+          lastCheckIn: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        };
+      }
+      return s;
+    });
+    setStaffList(updated);
+    saveToDisk("rms_staff", updated);
+  };
+
+  const handleGiveStaffAdvance = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStaffId || !advanceAmountInput) return;
+    const amt = parseFloat(advanceAmountInput);
+    if (amt <= 0) return;
+
+    const updated = staffList.map((s) => {
+      if (s.id === selectedStaffId) {
+        return {
+          ...s,
+          advances: [...s.advances, { date: new Date().toLocaleDateString(), amount: amt, reason: advanceReasonInput || "Personal Advance" }],
+        };
+      }
+      return s;
+    });
+
+    setStaffList(updated);
+    saveToDisk("rms_staff", updated);
+
+    // Record as operational expense
+    const staffName = staffList.find((s) => s.id === selectedStaffId)?.name;
+    const newExp: ExpenseRecord = {
+      id: `EXP-ADV-${Date.now().toString().slice(-4)}`,
+      date: new Date().toLocaleDateString(),
+      title: `Salary Advance: ${staffName}`,
+      category: "Salaries",
+      amount: amt,
+      paymentMode: "Cash",
+      staff: currentUserRole,
+    };
+    setExpenses([newExp, ...expenses]);
+    saveToDisk("rms_expenses", [newExp, ...expenses]);
+
+    alert(`Advance of ₹${amt} issued and recorded in expenses!`);
+    setShowAdvanceModal(false);
+    setAdvanceAmountInput("");
+    setAdvanceReasonInput("");
+  };
+
   const handleReceiveCreditPayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustForCredit || !receivedAmountInput) return;
@@ -763,7 +1039,6 @@ export default function UltimateRestaurantPOS() {
     setReceivedAmountInput("");
   };
 
-  // Admin Open Bill Edit
   const handleOpenBillEdit = (inv: SettledInvoice) => {
     if (currentUserRole !== "OWNER") {
       alert("Access Denied! Bill modification is strictly reserved for the Restaurant Owner (Admin).");
@@ -830,28 +1105,12 @@ export default function UltimateRestaurantPOS() {
     setEditingInvoice(null);
   };
 
-  // CSV Data Export for Accountant
   const handleExportCSV = () => {
     if (invoices.length === 0) {
       alert("No invoices to export!");
       return;
     }
-    const headers = [
-      "InvoiceNo",
-      "Date",
-      "Table",
-      "Channel",
-      "Customer",
-      "Phone",
-      "GSTIN",
-      "Subtotal",
-      "Discount",
-      "CGST",
-      "SGST",
-      "GrandTotal",
-      "PaymentMode",
-      "Cashier",
-    ];
+    const headers = ["InvoiceNo", "Date", "Table", "Channel", "Customer", "Phone", "GSTIN", "Subtotal", "Discount", "CGST", "SGST", "GrandTotal", "PaymentMode", "Cashier"];
     const rows = invoices.map((i) => [
       i.invoiceNo,
       `"${i.date}"`,
@@ -879,7 +1138,6 @@ export default function UltimateRestaurantPOS() {
     document.body.removeChild(link);
   };
 
-  // EOD Drawer Reconciliation Stats
   const eodStats = useMemo(() => {
     const totalCashSales = invoices.filter((i) => i.paymentMode === "Cash").reduce((s, i) => s + i.grandTotal, 0);
     const splitCashPart = invoices.filter((i) => i.paymentMode === "Split").reduce((s, i) => s + (i.splitDetails?.cash || 0), 0);
@@ -922,6 +1180,7 @@ export default function UltimateRestaurantPOS() {
     const upiSales = pureUpi + splitUpiPart + creditCollectedUPI;
     const cardSales = pureCard + splitCardPart;
 
+    const totalWastageCost = wastages.reduce((s, w) => s + w.costLoss, 0);
     const currentOutstanding = customers.reduce((s: number, c) => s + c.creditBalance, 0);
     const occupiedTables = tables.filter((t) => t.status === "OCCUPIED").length;
     const lowStockCount = inventory.filter((i) => i.currentStock <= i.minStockLevel).length;
@@ -929,7 +1188,8 @@ export default function UltimateRestaurantPOS() {
     return {
       totalSales,
       totalExpense,
-      netProfit: totalSales - totalExpense,
+      totalWastageCost,
+      netProfit: totalSales - totalExpense - totalWastageCost,
       totalOrders: invoices.length,
       cashSales,
       upiSales,
@@ -939,7 +1199,7 @@ export default function UltimateRestaurantPOS() {
       tableOccupancyRate: tables.length > 0 ? Math.round((occupiedTables / tables.length) * 100) : 0,
       lowStockCount,
     };
-  }, [invoices, expenses, tables, inventory, customers, creditCollections]);
+  }, [invoices, expenses, tables, inventory, customers, creditCollections, wastages]);
 
   const categories = useMemo(() => {
     return ["All", ...Array.from(new Set(menu.map((m) => m.category)))];
@@ -1122,122 +1382,134 @@ export default function UltimateRestaurantPOS() {
       )}
 
       {/* =========================================================================
-          ADMIN ONLY BILL EDIT MODAL
+          TABLE SHIFT MODAL
       ========================================================================= */}
-      {showBillEditModal && editingInvoice && (
+      {showShiftTableModal && (
         <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <div className="flex items-center gap-2">
-                <FileEdit className="w-5 h-5 text-rose-600" />
-                <h3 className="font-black text-base text-slate-900">Admin Bill Editor</h3>
-              </div>
-              <button
-                onClick={() => {
-                  setShowBillEditModal(false);
-                  setEditingInvoice(null);
-                }}
-                className="text-slate-400 hover:text-slate-700"
-              >
+          <div className="bg-white rounded-2xl p-6 max-w-xs w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                <ArrowRightLeft className="w-4 h-4 text-blue-600" /> Shift Table Order
+              </h3>
+              <button onClick={() => setShowShiftTableModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">Transfer {currentTable.name}'s active order to an empty table:</p>
+            <select
+              value={targetShiftTableId}
+              onChange={(e) => setTargetShiftTableId(e.target.value)}
+              className="w-full p-2 border rounded-xl text-xs bg-white font-bold"
+            >
+              <option value="">Select Destination Table</option>
+              {tables
+                .filter((t) => t.id !== selectedTableId && t.activeCart.length === 0)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>{t.name} (Available)</option>
+                ))}
+            </select>
+            <button
+              onClick={handleShiftTable}
+              className="w-full py-2.5 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-700 transition"
+            >
+              Confirm Shift
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          TABLE MERGE MODAL
+      ========================================================================= */}
+      {showMergeTableModal && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-xs w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                <Merge className="w-4 h-4 text-purple-600" /> Merge Another Table
+              </h3>
+              <button onClick={() => setShowMergeTableModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">Merge another occupied table's bill into {currentTable.name}:</p>
+            <select
+              value={targetMergeTableId}
+              onChange={(e) => setTargetMergeTableId(e.target.value)}
+              className="w-full p-2 border rounded-xl text-xs bg-white font-bold"
+            >
+              <option value="">Select Table to Merge</option>
+              {tables
+                .filter((t) => t.id !== selectedTableId && t.activeCart.length > 0)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>{t.name} ({t.activeCart.length} dishes)</option>
+                ))}
+            </select>
+            <button
+              onClick={handleMergeTable}
+              className="w-full py-2.5 bg-purple-600 text-white font-bold text-xs rounded-xl hover:bg-purple-700 transition"
+            >
+              Merge Bills
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          WASTAGE ENTRY MODAL
+      ========================================================================= */}
+      {showWastageModal && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                <AlertOctagon className="w-4 h-4 text-rose-600" /> Log Spoilage / Wastage
+              </h3>
+              <button onClick={() => setShowWastageModal(false)} className="text-slate-400 hover:text-slate-700">
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            <div className="p-2.5 bg-slate-50 rounded-xl text-xs space-y-1">
-              <p><span className="font-bold text-slate-700">Invoice:</span> {editingInvoice.invoiceNo}</p>
-              <p><span className="font-bold text-slate-700">Table:</span> {editingInvoice.table}</p>
-              <p><span className="font-bold text-slate-700">Subtotal:</span> {branding.currency} {editingInvoice.subtotal}</p>
-            </div>
-
-            <form onSubmit={handleSaveBillEdit} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Customer Name</label>
-                  <input
-                    type="text"
-                    value={editCustomerName}
-                    onChange={(e) => setEditCustomerName(e.target.value)}
-                    className="w-full px-2.5 py-1.5 border rounded-lg bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Mobile</label>
-                  <input
-                    type="tel"
-                    value={editCustomerPhone}
-                    onChange={(e) => setEditCustomerPhone(e.target.value)}
-                    className="w-full px-2.5 py-1.5 border rounded-lg bg-white"
-                  />
-                </div>
-              </div>
-
+            <form onSubmit={handleRecordWastage} className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-600 block mb-1">Discount Amount (₹)</label>
-                <input
-                  type="number"
-                  value={editDiscountAmount}
-                  onChange={(e) => setEditDiscountAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full px-2.5 py-1.5 border rounded-lg bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-600 block mb-1">Payment Method</label>
+                <label className="font-bold text-slate-600 block mb-1">Select Ingredient</label>
                 <select
-                  value={editPaymentMode}
-                  onChange={(e) => setEditPaymentMode(e.target.value as any)}
-                  className="w-full px-2.5 py-1.5 border rounded-lg bg-white font-bold"
+                  required
+                  value={selectedWastageInvId}
+                  onChange={(e) => setSelectedWastageInvId(e.target.value)}
+                  className="w-full p-2 border rounded-xl bg-white font-bold"
                 >
-                  <option value="Cash">Cash</option>
-                  <option value="UPI">UPI</option>
-                  <option value="Card">Card</option>
-                  <option value="Credit">Credit (Udhar)</option>
-                  <option value="Split">Split Payment</option>
+                  <option value="">Choose Raw Material</option>
+                  {inventory.map((i) => (
+                    <option key={i.id} value={i.id}>{i.name} (Stock: {i.currentStock} {i.unit})</option>
+                  ))}
                 </select>
               </div>
-
-              {editPaymentMode === "Split" && (
-                <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-600">Cash Part (₹)</label>
-                      <input
-                        type="number"
-                        value={editSplitCash}
-                        onChange={(e) => setEditSplitCash(parseFloat(e.target.value) || 0)}
-                        className="w-full px-2 py-1 border rounded text-xs bg-white font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-600">Digital Mode</label>
-                      <select
-                        value={editSplitDigitalMode}
-                        onChange={(e) => setEditSplitDigitalMode(e.target.value as DigitalSplitMethod)}
-                        className="w-full px-2 py-1 border rounded text-xs bg-white font-bold"
-                      >
-                        <option value="UPI">UPI (QR/GPay)</option>
-                        <option value="Card">Card Swipe</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-600">{editSplitDigitalMode} Part (₹)</label>
-                    <input
-                      type="number"
-                      value={editSplitDigital}
-                      onChange={(e) => setEditSplitDigital(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1 border rounded text-xs bg-white font-bold"
-                    />
-                  </div>
-                </div>
-              )}
-
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Wasted Quantity</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 1.5"
+                  value={wastageQtyInput}
+                  onChange={(e) => setWastageQtyInput(e.target.value)}
+                  className="w-full p-2 border rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Reason / Notes</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Milk turned sour, Burned"
+                  value={wastageReasonInput}
+                  onChange={(e) => setWastageReasonInput(e.target.value)}
+                  className="w-full p-2 border rounded-xl"
+                />
+              </div>
               <button
                 type="submit"
-                className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
+                className="w-full py-2.5 bg-rose-600 text-white font-bold text-xs rounded-xl hover:bg-rose-700 transition"
               >
-                Save & Update Invoice Record
+                Record Wastage & Deduct Stock
               </button>
             </form>
           </div>
@@ -1245,34 +1517,62 @@ export default function UltimateRestaurantPOS() {
       )}
 
       {/* =========================================================================
-          DIGITAL QR MENU GUEST PREVIEW MODAL
+          STAFF SALARY ADVANCE MODAL
       ========================================================================= */}
-      {showQrMenuModal && (
+      {showAdvanceModal && (
         <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-center">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b pb-2">
-              <span className="text-xs font-black uppercase text-slate-500">Guest Self-Ordering QR</span>
-              <button onClick={() => setShowQrMenuModal(false)} className="text-slate-400 hover:text-slate-700">
+              <h3 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                <Banknote className="w-4 h-4 text-emerald-600" /> Issue Staff Advance
+              </h3>
+              <button onClick={() => setShowAdvanceModal(false)} className="text-slate-400 hover:text-slate-700">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 bg-slate-50 rounded-2xl border flex flex-col items-center">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
-                  `https://${typeof window !== "undefined" ? window.location.host : "restaurant"}/menu?table=${currentTable.name}`
-                )}`}
-                alt="Table QR"
-                className="w-40 h-40 bg-white p-2 rounded-xl shadow-sm border"
-              />
-              <h4 className="font-black text-base text-slate-900 mt-3">{currentTable.name} Digital Standee</h4>
-              <p className="text-[11px] text-slate-500">Scan to view contactless live menu & order</p>
-            </div>
-            <button
-              onClick={() => window.print()}
-              className="w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition flex items-center justify-center gap-1.5"
-            >
-              <Printer className="w-4 h-4" /> Print Table QR Standee
-            </button>
+            <form onSubmit={handleGiveStaffAdvance} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Select Staff Member</label>
+                <select
+                  required
+                  value={selectedStaffId}
+                  onChange={(e) => setSelectedStaffId(e.target.value)}
+                  className="w-full p-2 border rounded-xl bg-white font-bold"
+                >
+                  <option value="">Choose Employee</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Advance Amount (₹)</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 1000"
+                  value={advanceAmountInput}
+                  onChange={(e) => setAdvanceAmountInput(e.target.value)}
+                  className="w-full p-2 border rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-600 block mb-1">Remarks</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Emergency, Medical"
+                  value={advanceReasonInput}
+                  onChange={(e) => setAdvanceReasonInput(e.target.value)}
+                  className="w-full p-2 border rounded-xl"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl hover:bg-emerald-700 transition"
+              >
+                Disburse Advance
+              </button>
+            </form>
           </div>
         </div>
       )}
@@ -1355,7 +1655,7 @@ export default function UltimateRestaurantPOS() {
       )}
 
       {/* =========================================================================
-          PRINT ONLY THERMAL SLIP ENGINE (B2B Tax Invoice, KOT, & EOD Z-Report)
+          PRINT ONLY THERMAL SLIP ENGINE (B2B Tax Invoice, KOT, & Container Label)
       ========================================================================= */}
       <div id="thermal-receipt" className="hidden print:block p-2 max-w-[80mm] mx-auto text-black font-mono text-[11px] leading-tight">
         {printInvoiceData && (
@@ -1467,358 +1767,18 @@ export default function UltimateRestaurantPOS() {
           </div>
         )}
 
-        {printKOTData && (
-          <div className="space-y-2 text-center">
-            <div className="border-b-2 border-black pb-2">
-              <h2 className="text-sm font-black uppercase">*** KITCHEN ORDER TICKET (KOT) ***</h2>
-              <p className="text-xs font-extrabold mt-0.5">KOT #{printKOTData.kotNo}</p>
-              <p className="text-xs font-black mt-1">ORDER: {printKOTData.channel} - {printKOTData.table}</p>
-              <p className="text-[9px]">{printKOTData.timestamp}</p>
+        {printContainerLabel && (
+          <div className="border border-black p-2 text-center space-y-1 max-w-[50mm] mx-auto text-[10px]">
+            <h4 className="font-black uppercase">{branding.name}</h4>
+            <div className="border-t border-b border-black py-1">
+              <p className="font-extrabold text-xs">{printContainerLabel.name}</p>
+              <p>Type: {printContainerLabel.isVeg ? "[VEG]" : "[NON-VEG]"}</p>
+              <p>Packed: {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
             </div>
-
-            <table className="w-full text-left text-xs my-2">
-              <thead>
-                <tr className="border-b border-black font-black">
-                  <th className="py-1">Ordered Item</th>
-                  <th className="text-center py-1">Station</th>
-                  <th className="text-right py-1">Qty</th>
-                </tr>
-              </thead>
-              <tbody>
-                {printKOTData.items.map((it, idx) => (
-                  <tr key={idx} className="border-b border-dashed border-slate-400">
-                    <td className="py-1.5 font-bold">
-                      {it.name}
-                      {it.notes && <span className="block text-[9px] font-black text-rose-700 uppercase">★ {it.notes}</span>}
-                    </td>
-                    <td className="text-center py-1.5 text-[9px]">{it.station}</td>
-                    <td className="text-right py-1.5 font-black text-sm">× {it.qty}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="pt-2 border-t border-black text-[10px] font-bold">
-              Dispatch to Respective Kitchen Station Immediately
-            </div>
-          </div>
-        )}
-
-        {printEODSnapshot && (
-          <div className="space-y-2 text-center">
-            <div className="border-b-2 border-black pb-2">
-              <h2 className="text-sm font-black uppercase">*** END OF DAY (Z-REPORT) ***</h2>
-              <p className="text-[10px]">{branding.name}</p>
-              <p className="text-[9px]">{new Date().toLocaleString()}</p>
-            </div>
-
-            <div className="text-left text-xs space-y-1.5 py-2">
-              <div className="flex justify-between">
-                <span>Opening Cash Float:</span>
-                <span className="font-bold">₹{printEODSnapshot.openingFloat}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total Cash Inflow:</span>
-                <span className="font-bold">+ ₹{printEODSnapshot.totalCashInflow}</span>
-              </div>
-              <div className="flex justify-between text-rose-600">
-                <span>Paid Out Cash Expenses:</span>
-                <span className="font-bold">- ₹{printEODSnapshot.cashExpenses}</span>
-              </div>
-              <div className="flex justify-between border-t border-black pt-1 font-black text-sm">
-                <span>EXPECTED DRAWER CASH:</span>
-                <span>₹{printEODSnapshot.expectedCashInDrawer}</span>
-              </div>
-              <div className="flex justify-between border-t border-dashed border-slate-400 pt-1">
-                <span>Digital / Online UPI Revenue:</span>
-                <span className="font-bold">₹{printEODSnapshot.digitalSales}</span>
-              </div>
-              <div className="flex justify-between font-black">
-                <span>TOTAL GROSS TURNOVER:</span>
-                <span>₹{printEODSnapshot.totalRevenue}</span>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-black text-[9px] font-bold">
-              Verified by: {currentUserRole} Signature: ________________
-            </div>
+            <p className="text-[8px]">Best Consumed within 2 Hours</p>
           </div>
         )}
       </div>
-
-      {/* =========================================================================
-          MODALS: MENU / TABLE / INVENTORY FORMS
-      ========================================================================= */}
-      {showAddMenuModal && (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-black text-lg text-slate-900">Add New Menu Dish</h3>
-              <button onClick={() => setShowAddMenuModal(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateMenuItem} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-600 block mb-1">Item / Dish Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Masala Dosa, Tandoori Roti, Cold Coffee"
-                  value={newMenuName}
-                  onChange={(e) => setNewMenuName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Category</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Main Course, Starters"
-                    value={newMenuCategory}
-                    onChange={(e) => setNewMenuCategory(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Kitchen Station Routing</label>
-                  <select
-                    value={newMenuStation}
-                    onChange={(e) => setNewMenuStation(e.target.value as KitchenStation)}
-                    className="w-full px-3 py-2 border rounded-xl bg-white font-bold"
-                  >
-                    <option value="Main Kitchen">Main Kitchen</option>
-                    <option value="Tandoor">Tandoor Section</option>
-                    <option value="Bar/Beverages">Bar & Beverages</option>
-                    <option value="Bakery/Desserts">Bakery / Desserts</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Base Selling Price (₹)</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="e.g. 150"
-                    value={newMenuPrice}
-                    onChange={(e) => setNewMenuPrice(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Dietary Type</label>
-                  <select
-                    value={newMenuIsVeg ? "true" : "false"}
-                    onChange={(e) => setNewMenuIsVeg(e.target.value === "true")}
-                    className="w-full px-3 py-2 border rounded-xl bg-white"
-                  >
-                    <option value="true">Pure Veg (Green)</option>
-                    <option value="false">Non-Veg (Red)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-50 border rounded-xl space-y-2">
-                <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newMenuHasVariants}
-                    onChange={(e) => setNewMenuHasVariants(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span>Has Sizes / Portions (Half & Full)?</span>
-                </label>
-
-                {newMenuHasVariants && (
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-semibold">Half Price (₹)</span>
-                      <input
-                        type="number"
-                        placeholder="Half Price"
-                        value={variantHalfPrice}
-                        onChange={(e) => setVariantHalfPrice(e.target.value)}
-                        className="w-full px-2 py-1.5 border rounded-lg bg-white"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-semibold">Full Price (₹)</span>
-                      <input
-                        type="number"
-                        placeholder="Full Price"
-                        value={variantFullPrice}
-                        onChange={(e) => setVariantFullPrice(e.target.value)}
-                        className="w-full px-2 py-1.5 border rounded-lg bg-white"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
-              >
-                Save Dish to Menu
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showAddTableModal && (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-black text-lg text-slate-900">Add Table / Counter</h3>
-              <button onClick={() => setShowAddTableModal(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateTable} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-600 block mb-1">Table / Counter Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Table 5, Rooftop 1, Takeaway 2"
-                  value={newTableName}
-                  onChange={(e) => setNewTableName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Channel Type</label>
-                  <select
-                    value={newTableChannel}
-                    onChange={(e) => setNewTableChannel(e.target.value as OrderChannel)}
-                    className="w-full px-2 py-2 border rounded-xl bg-white font-bold"
-                  >
-                    <option value="Dine-in">Dine-in</option>
-                    <option value="Takeaway">Takeaway</option>
-                    <option value="Swiggy">Swiggy</option>
-                    <option value="Zomato">Zomato</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Guest Capacity</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="4"
-                    value={newTableCapacity}
-                    onChange={(e) => setNewTableCapacity(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
-              >
-                Create Table / Channel
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showAddInventoryModal && (
-        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-black text-lg text-slate-900">Add Raw Material Ingredient</h3>
-              <button onClick={() => setShowAddInventoryModal(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateInventoryItem} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-600 block mb-1">Ingredient Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Cooking Oil, Mozzarella Cheese, Basmati Rice"
-                  value={newInvName}
-                  onChange={(e) => setNewInvName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Unit</label>
-                  <select
-                    value={newInvUnit}
-                    onChange={(e) => setNewInvUnit(e.target.value as any)}
-                    className="w-full px-3 py-2 border rounded-xl bg-white"
-                  >
-                    <option value="kg">Kilogram (kg)</option>
-                    <option value="g">Gram (g)</option>
-                    <option value="l">Liter (l)</option>
-                    <option value="ml">Milliliter (ml)</option>
-                    <option value="pcs">Pieces (pcs)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Opening Stock</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="10"
-                    value={newInvStock}
-                    onChange={(e) => setNewInvStock(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Low Stock Warning</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="2"
-                    value={newInvMinStock}
-                    onChange={(e) => setNewInvMinStock(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-600 block mb-1">Cost Per Unit (₹)</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="120"
-                    value={newInvCost}
-                    onChange={(e) => setNewInvCost(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition"
-              >
-                Add to Stock
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* =========================================================================
           SCREEN APP VIEW
@@ -1839,14 +1799,6 @@ export default function UltimateRestaurantPOS() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowQrMenuModal(true)}
-              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5 transition"
-              title="Table Self Ordering Menu"
-            >
-              <QrCode className="w-3.5 h-3.5" /> Table Standee QR
-            </button>
-
             <div className="flex items-center gap-1.5 bg-black/20 p-1 rounded-xl">
               <span className="text-[10px] uppercase font-bold text-white/60 px-1 hidden sm:inline flex items-center gap-0.5">
                 <Lock className="w-2.5 h-2.5" /> Role:
@@ -1867,14 +1819,15 @@ export default function UltimateRestaurantPOS() {
           </div>
         </header>
 
-        {/* Global Navigation - STRICT ROLE PERMISSION FILTER */}
+        {/* Navigation Bar */}
         <nav className="bg-white border-b border-slate-200 px-4 md:px-6 flex gap-1 overflow-x-auto text-xs font-bold">
           {[
             { id: "POS", label: "POS Billing", icon: ShoppingBag },
             { id: "MENU_MGMT", label: "Menu Catalog", icon: Edit },
             { id: "TABLES", label: "Tables & Channels", icon: UtensilsCrossed },
             { id: "KDS", label: "Kitchen KDS", icon: ChefHat },
-            { id: "INVENTORY", label: "Inventory Stock", icon: Boxes },
+            { id: "INVENTORY", label: "Stock & Wastage", icon: Boxes },
+            { id: "STAFF", label: "Staff & Advances", icon: UserCheck },
             { id: "DASHBOARD", label: "Executive Analytics", icon: LayoutDashboard },
             { id: "EOD", label: "EOD Cash Drawer", icon: Banknote },
             { id: "EXPENSES", label: "Expenses & P&L", icon: Wallet },
@@ -1907,91 +1860,34 @@ export default function UltimateRestaurantPOS() {
             })}
         </nav>
 
-        {/* MODULE: MENU CATALOG */}
-        {activeModule === "MENU_MGMT" && (
-          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-              <div>
-                <h2 className="text-xl font-black text-slate-900">Complete Menu Management</h2>
-                <p className="text-xs text-slate-500">Configure kitchen station routing, dietary tags, and portion prices</p>
-              </div>
-              <button
-                onClick={() => setShowAddMenuModal(true)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-800 transition"
-              >
-                <Plus className="w-4 h-4" /> + Add New Menu Dish
-              </button>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
-                      <th className="py-2">Dish Name</th>
-                      <th className="py-2">Category</th>
-                      <th className="py-2">Station Routing</th>
-                      <th className="py-2">Dietary</th>
-                      <th className="py-2">Base Price</th>
-                      <th className="py-2">Variants (Sizes)</th>
-                      <th className="py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {menu.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="py-3 font-bold text-slate-900">{item.name}</td>
-                        <td className="py-3 text-slate-600">{item.category}</td>
-                        <td className="py-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
-                            {item.station}
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.isVeg ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                            {item.isVeg ? "Pure Veg" : "Non-Veg"}
-                          </span>
-                        </td>
-                        <td className="py-3 font-black text-slate-900">{branding.currency} {item.basePrice}</td>
-                        <td className="py-3 text-slate-600">
-                          {item.variants ? item.variants.map((v) => `${v.name} (₹${v.price})`).join(", ") : "Single Size"}
-                        </td>
-                        <td className="py-3 text-right">
-                          <button
-                            onClick={() => handleDeleteMenuItem(item.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </main>
-        )}
-
-        {/* MODULE: POS BILLING */}
+        {/* =========================================================================
+            MODULE: POS BILLING (WITH COUPONS, SHIFT & MERGE)
+        ========================================================================= */}
         {activeModule === "POS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-7 space-y-4">
-              {/* Tables & Order Channels Selector */}
+              {/* Tables, Shift, Merge Bar */}
               <div className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1">
                     <UtensilsCrossed className="w-3.5 h-3.5" /> Channel: {currentTable.orderChannel} • {currentTable.name}
                   </span>
                   <div className="flex items-center gap-2">
-                    {["OWNER", "MANAGER"].includes(currentUserRole) && (
-                      <button
-                        onClick={() => setShowAddTableModal(true)}
-                        className="text-xs text-rose-600 font-bold hover:underline flex items-center gap-0.5"
-                      >
-                        <Plus className="w-3 h-3" /> Add Table/Channel
-                      </button>
+                    {currentTable.activeCart.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => setShowShiftTableModal(true)}
+                          className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-0.5"
+                        >
+                          <ArrowRightLeft className="w-3 h-3" /> Shift Table
+                        </button>
+                        <button
+                          onClick={() => setShowMergeTableModal(true)}
+                          className="text-xs text-purple-600 font-bold hover:underline flex items-center gap-0.5"
+                        >
+                          <Merge className="w-3 h-3" /> Merge Table
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -2023,7 +1919,7 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Cooking Instruction & Search Bar */}
+              {/* Cooking Notes & Search */}
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -2062,7 +1958,7 @@ export default function UltimateRestaurantPOS() {
                 </div>
               </div>
 
-              {/* Items Grid with Variants */}
+              {/* Items Grid with Sticker Label Action */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[580px] overflow-y-auto pr-1">
                 {filteredMenuItems.map((item) => (
                   <div
@@ -2090,33 +1986,50 @@ export default function UltimateRestaurantPOS() {
                       </p>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
-                      {item.variants ? (
-                        item.variants.map((v) => (
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.variants ? (
+                          item.variants.map((v) => (
+                            <button
+                              key={v.name}
+                              onClick={() => addItemToCart(item, v)}
+                              className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 transition"
+                            >
+                              + {v.name} ({branding.currency}{v.price})
+                            </button>
+                          ))
+                        ) : (
                           <button
-                            key={v.name}
-                            onClick={() => addItemToCart(item, v)}
-                            className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 transition"
+                            onClick={() => addItemToCart(item)}
+                            className="px-3 py-1.5 text-white rounded-lg text-xs font-bold transition shadow-sm"
+                            style={{ backgroundColor: branding.primaryColor }}
                           >
-                            + {v.name} ({branding.currency}{v.price})
+                            + Add to Order
                           </button>
-                        ))
-                      ) : (
-                        <button
-                          onClick={() => addItemToCart(item)}
-                          className="w-full py-1.5 text-white rounded-lg text-xs font-bold transition shadow-sm"
-                          style={{ backgroundColor: branding.primaryColor }}
-                        >
-                          + Add to Order
-                        </button>
-                      )}
+                        )}
+                      </div>
+
+                      {/* Container Sticker Print */}
+                      <button
+                        onClick={() => {
+                          setPrintContainerLabel({ name: item.name, isVeg: item.isVeg });
+                          setPrintInvoiceData(null);
+                          setPrintKOTData(null);
+                          setPrintEODSnapshot(null);
+                          setTimeout(() => window.print(), 100);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-slate-800 rounded-lg hover:bg-slate-100"
+                        title="Print Container Sticker Label"
+                      >
+                        <StickyNote className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Right Terminal: Customer, B2B GST, Loyalty & Settlement */}
+            {/* Right Terminal: Customer, Coupons, Loyalty, Settlement */}
             <div className="lg:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
               <div className="space-y-4">
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
@@ -2250,31 +2163,22 @@ export default function UltimateRestaurantPOS() {
 
               {/* Settlement Footer */}
               <div className="pt-3 border-t border-slate-200 space-y-2 text-xs">
-                {/* Discount */}
-                <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-500 flex items-center gap-0.5"><Percent className="w-3 h-3" /> Discount:</span>
-                  <input
-                    type="number"
-                    placeholder="%"
-                    value={discountPercent || ""}
-                    onChange={(e) => {
-                      setDiscountPercent(parseFloat(e.target.value) || 0);
-                      setDiscountFlat(0);
-                    }}
-                    className="w-12 px-2 py-1 border rounded text-xs text-center bg-white"
-                  />
-                  <span className="text-slate-400">or</span>
-                  <input
-                    type="number"
-                    placeholder="₹ Flat"
-                    value={discountFlat || ""}
-                    onChange={(e) => {
-                      setDiscountFlat(parseFloat(e.target.value) || 0);
-                      setDiscountPercent(0);
-                    }}
-                    className="w-16 px-2 py-1 border rounded text-xs text-center bg-white"
-                  />
-                </div>
+                {/* Coupon Code Input */}
+                <form onSubmit={handleApplyCoupon} className="flex gap-1.5">
+                  <div className="relative flex-1">
+                    <Tag className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                    <input
+                      type="text"
+                      placeholder="Promo Coupon Code (e.g. FLAT50)"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1.5 border rounded-lg text-xs font-bold uppercase"
+                    />
+                  </div>
+                  <button type="submit" className="px-3 py-1.5 bg-slate-900 text-white rounded-lg font-bold">
+                    Apply
+                  </button>
+                </form>
 
                 <div className="space-y-1 text-slate-600">
                   <div className="flex justify-between">
@@ -2283,7 +2187,7 @@ export default function UltimateRestaurantPOS() {
                   </div>
                   {discountAmount > 0 && (
                     <div className="flex justify-between text-red-600 font-semibold">
-                      <span>Discount:</span>
+                      <span>Discount (Inc. Coupons):</span>
                       <span>- {branding.currency} {discountAmount}</span>
                     </div>
                   )}
@@ -2329,25 +2233,6 @@ export default function UltimateRestaurantPOS() {
                     ))}
                   </div>
                 </div>
-
-                {/* Dynamic QR Box */}
-                {activePaymentMode === "UPI" && branding.upiId && finalPayable > 0 && (
-                  <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center gap-3">
-                    <img
-                      src={getUpiQrUrl(finalPayable)}
-                      alt="Scan UPI QR"
-                      className="w-16 h-16 bg-white p-1 rounded-lg border border-emerald-200 shadow-sm"
-                    />
-                    <div className="text-[11px]">
-                      <span className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[9px] font-black uppercase">
-                        Instant Dynamic QR
-                      </span>
-                      <p className="font-extrabold text-slate-900 mt-1">Scan to Pay Exact Amount</p>
-                      <p className="text-emerald-700 font-mono text-[10px]">{branding.upiId}</p>
-                      <p className="font-black text-xs text-slate-900 mt-0.5">Payable: {branding.currency} {finalPayable}</p>
-                    </div>
-                  </div>
-                )}
 
                 {/* Split Calculation */}
                 {activePaymentMode === "Split" && (
@@ -2419,7 +2304,661 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: MULTI-STATION KITCHEN DISPLAY SCREEN (KDS) */}
+        {/* =========================================================================
+            MODULE: STAFF ATTENDANCE & ADVANCES
+        ========================================================================= */}
+        {activeModule === "STAFF" && (
+          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <UserCheck className="w-6 h-6 text-emerald-600" /> Staff Attendance & Advance Register
+                </h2>
+                <p className="text-xs text-slate-500">Track check-ins, monthly salaries, and cash advance disbursals</p>
+              </div>
+              <button
+                onClick={() => setShowAdvanceModal(true)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition flex items-center gap-1.5"
+              >
+                <Banknote className="w-4 h-4" /> Issue Salary Advance
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {staffList.map((st) => (
+                <div key={st.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-extrabold text-base text-slate-900">{st.name}</h3>
+                        <p className="text-xs text-slate-500">{st.role} • Salary: ₹{st.monthlySalary}/mo</p>
+                      </div>
+                      <button
+                        onClick={() => toggleStaffCheckIn(st.id)}
+                        className={`px-3 py-1 rounded-full text-xs font-black transition ${
+                          st.status === "CHECKED_IN"
+                            ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        {st.status === "CHECKED_IN" ? "Checked In" : "Checked Out"}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 p-3 bg-slate-50 rounded-xl space-y-1 text-xs">
+                      <p className="font-bold text-slate-700">Advances Taken this Month:</p>
+                      {st.advances.length === 0 ? (
+                        <p className="text-slate-400">No advance taken.</p>
+                      ) : (
+                        st.advances.map((adv, idx) => (
+                          <div key={idx} className="flex justify-between text-slate-600">
+                            <span>{adv.date} ({adv.reason})</span>
+                            <span className="font-bold text-rose-600">₹{adv.amount}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between items-center text-xs">
+                    <span className="text-slate-400">Last Action: {st.lastCheckIn || "N/A"}</span>
+                    <span className="font-black text-slate-800">
+                      Total Advance: ₹{st.advances.reduce((s, a) => s + a.amount, 0)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: INVENTORY & WASTAGE / SPOILAGE LOG
+        ========================================================================= */}
+        {activeModule === "INVENTORY" && (
+          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Inventory & Spoilage Wastage Log</h2>
+                <p className="text-xs text-slate-500">Auto-deduction on orders and food spoilage loss accounting</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowWastageModal(true)}
+                  className="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-rose-700 shadow-sm"
+                >
+                  <AlertOctagon className="w-4 h-4" /> Log Spoilage / Wastage
+                </button>
+                <button
+                  onClick={() => setShowAddInventoryModal(true)}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
+                >
+                  <Plus className="w-4 h-4" /> + Add New Raw Material
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <h3 className="font-bold text-sm text-slate-900 uppercase mb-3">Live Ingredient Stocks</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
+                      <th className="py-2">Ingredient</th>
+                      <th className="py-2">Unit</th>
+                      <th className="py-2">Current Stock</th>
+                      <th className="py-2">Low Warning Level</th>
+                      <th className="py-2">Cost / Unit</th>
+                      <th className="py-2 text-right">Quick Stock Inward</th>
+                      <th className="py-2 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {inventory.map((item) => {
+                      const isLow = item.currentStock <= item.minStockLevel;
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50">
+                          <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                          <td className="py-3 text-slate-500 uppercase">{item.unit}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-0.5 rounded-full font-bold ${isLow ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}>
+                              {item.currentStock} {item.unit}
+                            </span>
+                          </td>
+                          <td className="py-3 text-slate-600">{item.minStockLevel} {item.unit}</td>
+                          <td className="py-3 font-semibold text-slate-800">{branding.currency} {item.costPerUnit}</td>
+                          <td className="py-3 text-right">
+                            <button
+                              onClick={() => {
+                                const addAmount = prompt(`Add stock inward for ${item.name} (${item.unit}):`, "5");
+                                if (addAmount && !isNaN(parseFloat(addAmount))) {
+                                  const updated = inventory.map((i) =>
+                                    i.id === item.id ? { ...i, currentStock: parseFloat((i.currentStock + parseFloat(addAmount)).toFixed(2)) } : i
+                                  );
+                                  setInventory(updated);
+                                  saveToDisk("rms_inventory", updated);
+                                }
+                              }}
+                              className="px-3 py-1 bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800 transition"
+                            >
+                              + Inward Stock
+                            </button>
+                          </td>
+                          <td className="py-3 text-center">
+                            <button
+                              onClick={() => handleDeleteInventory(item.id)}
+                              className="p-1.5 text-slate-300 hover:text-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Wastage Record Log */}
+            {wastages.length > 0 && (
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="font-bold text-sm text-rose-700 uppercase mb-3 flex items-center gap-1.5">
+                  <AlertOctagon className="w-4 h-4" /> Spoilage & Wastage Loss Log
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="text-slate-400 uppercase font-bold border-b pb-2">
+                        <th className="py-2">Date</th>
+                        <th className="py-2">Ingredient</th>
+                        <th className="py-2">Wasted Qty</th>
+                        <th className="py-2">Reason</th>
+                        <th className="py-2">Reported By</th>
+                        <th className="py-2 text-right">Total Financial Loss</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {wastages.map((w) => (
+                        <tr key={w.id} className="hover:bg-slate-50">
+                          <td className="py-2.5 text-slate-500">{w.date}</td>
+                          <td className="py-2.5 font-bold text-slate-900">{w.ingredientName}</td>
+                          <td className="py-2.5">{w.qty} {w.unit}</td>
+                          <td className="py-2.5 text-slate-600">{w.reason}</td>
+                          <td className="py-2.5 text-slate-500">{w.reportedBy}</td>
+                          <td className="py-2.5 text-right font-black text-rose-600">
+                            - {branding.currency} {w.costLoss}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: CUSTOMERS CRM & UDHAR (WITH WHATSAPP REMINDER)
+        ========================================================================= */}
+        {activeModule === "CUSTOMERS" && (
+          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Customer CRM, Loyalty Points & Credit Ledger</h2>
+                  <p className="text-xs text-slate-500">Track loyalty rewards, send WhatsApp payment reminders, and clear dues</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
+                      <th className="py-2">Customer Name</th>
+                      <th className="py-2">Mobile Phone</th>
+                      <th className="py-2">Company / GSTIN</th>
+                      <th className="py-2">Loyalty Points</th>
+                      <th className="py-2">Lifetime Spent</th>
+                      <th className="py-2">Outstanding Udhar</th>
+                      <th className="py-2 text-right">Credit & WhatsApp Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {customers.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
+                          No customers recorded yet. Add customer phone numbers during billing to build CRM.
+                        </td>
+                      </tr>
+                    ) : (
+                      customers.map((cust, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="py-3 font-bold text-slate-900">{cust.name}</td>
+                          <td className="py-3 text-slate-600 font-mono">{cust.phone}</td>
+                          <td className="py-3 text-slate-600">
+                            {cust.companyName || cust.gstin ? `${cust.companyName || ""} (${cust.gstin || ""})` : "Individual"}
+                          </td>
+                          <td className="py-3">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
+                              ★ {cust.loyaltyPoints} pts
+                            </span>
+                          </td>
+                          <td className="py-3 font-bold text-slate-900">{branding.currency} {cust.totalSpent}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-lg font-black ${cust.creditBalance > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}>
+                              {branding.currency} {cust.creditBalance}
+                            </span>
+                          </td>
+                          <td className="py-3 text-right">
+                            {cust.creditBalance > 0 ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => sendWhatsAppCreditReminder(cust)}
+                                  className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-lg font-bold hover:bg-emerald-100 transition flex items-center gap-1"
+                                  title="Send WhatsApp Due Reminder"
+                                >
+                                  <Share2 className="w-3 h-3" /> Remind
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedCustForCredit(cust);
+                                    setReceivedAmountInput(cust.creditBalance.toString());
+                                    setShowReceiveCreditModal(true);
+                                  }}
+                                  className="px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition flex items-center gap-1"
+                                >
+                                  <HandCoins className="w-3.5 h-3.5" /> Receive Payment
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-semibold">All Dues Cleared</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: AUDIT (WITH WHATSAPP BILL SHARE & CSV EXPORT)
+        ========================================================================= */}
+        {activeModule === "AUDIT" && (
+          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <Receipt className="w-5 h-5 text-slate-600" /> Settled Invoices Audit
+                  </h2>
+                  <p className="text-xs text-slate-500">Tax invoices with WhatsApp digital delivery & CA report exports</p>
+                </div>
+                <button
+                  onClick={handleExportCSV}
+                  className="px-4 py-2 bg-emerald-700 text-white rounded-xl text-xs font-bold hover:bg-emerald-800 transition flex items-center gap-1.5 shadow-sm"
+                >
+                  <FileSpreadsheet className="w-4 h-4" /> Download CA Sales CSV Report
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
+                      <th className="py-2">Invoice No</th>
+                      <th className="py-2">Date & Time</th>
+                      <th className="py-2">Channel / Table</th>
+                      <th className="py-2">Customer / B2B</th>
+                      <th className="py-2">Payment Breakdown</th>
+                      <th className="py-2 text-right">CGST</th>
+                      <th className="py-2 text-right">SGST</th>
+                      <th className="py-2 text-right">Grand Total</th>
+                      <th className="py-2 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {invoices.map((inv) => (
+                      <tr key={inv.id} className="hover:bg-slate-50">
+                        <td className="py-3 font-mono font-bold text-slate-900">{inv.invoiceNo}</td>
+                        <td className="py-3 text-slate-500">{inv.date}</td>
+                        <td className="py-3 font-semibold text-slate-700">
+                          {inv.channel} ({inv.table})
+                        </td>
+                        <td className="py-3 text-slate-600">
+                          <span className="font-bold text-slate-900 block">{inv.customerName || "Guest"}</span>
+                          {inv.customerCompany && <span className="text-[10px] text-blue-600 block">{inv.customerCompany}</span>}
+                          {inv.customerGst && <span className="text-[10px] text-slate-400 font-mono block">GSTIN: {inv.customerGst}</span>}
+                        </td>
+                        <td className="py-3">
+                          {inv.paymentMode === "Split" && inv.splitDetails ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 block w-fit">
+                              Cash: ₹{inv.splitDetails.cash} + {inv.splitDetails.digitalMode}: ₹{inv.splitDetails.digitalAmount}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
+                              {inv.paymentMode}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 text-right">{branding.currency} {inv.cgst}</td>
+                        <td className="py-3 text-right">{branding.currency} {inv.sgst}</td>
+                        <td className="py-3 text-right font-black text-slate-900">{branding.currency} {inv.grandTotal}</td>
+                        <td className="py-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* WhatsApp Digital Bill Button */}
+                            <button
+                              onClick={() => sendWhatsAppBill(inv)}
+                              className="p-1 hover:text-emerald-600 text-slate-600"
+                              title="Send Bill on WhatsApp"
+                            >
+                              <Share2 className="w-4 h-4" />
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setPrintInvoiceData(inv);
+                                setPrintKOTData(null);
+                                setPrintEODSnapshot(null);
+                                setPrintContainerLabel(null);
+                                setTimeout(() => window.print(), 100);
+                              }}
+                              className="p-1 hover:text-rose-600 text-slate-600"
+                              title="Reprint Thermal Bill"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+
+                            {currentUserRole === "OWNER" && (
+                              <button
+                                onClick={() => handleOpenBillEdit(inv)}
+                                className="p-1 hover:text-blue-600 text-slate-600"
+                                title="Edit Bill (Admin)"
+                              >
+                                <FileEdit className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: DASHBOARD
+        ========================================================================= */}
+        {activeModule === "DASHBOARD" && (
+          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Executive Performance Dashboard</h2>
+                <p className="text-xs text-slate-500">Live consolidated financial reports, net profits, and loss metrics</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Gross Sales Revenue</span>
+                <p className="text-2xl font-black text-slate-900 mt-1">{branding.currency} {dashboardStats.totalSales}</p>
+                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
+                  <ArrowUpRight className="w-3 h-3" /> {dashboardStats.totalOrders} Settled Orders
+                </span>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Total Expenses</span>
+                <p className="text-2xl font-black text-rose-600 mt-1">{branding.currency} {dashboardStats.totalExpense}</p>
+                <span className="text-[10px] text-slate-500 font-medium mt-1">Operational costs</span>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Food Spoilage Loss</span>
+                <p className="text-2xl font-black text-amber-600 mt-1">{branding.currency} {dashboardStats.totalWastageCost}</p>
+                <span className="text-[10px] text-slate-500 font-medium mt-1">Inventory wastage loss</span>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase">Estimated Net Profit</span>
+                <p className={`text-2xl font-black mt-1 ${dashboardStats.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                  {branding.currency} {dashboardStats.netProfit}
+                </p>
+                <span className="text-[10px] text-slate-500 font-medium mt-1">Turnover minus expenses & wastage</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown</h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Banknote className="w-4 h-4 text-emerald-600" /> Cash Drawer:</span>
+                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cashSales}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><QrCode className="w-4 h-4 text-blue-600" /> UPI Online:</span>
+                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.upiSales}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><CreditCard className="w-4 h-4 text-purple-600" /> Card / POS:</span>
+                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cardSales}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" /> Low Stock Alerts
+                  </h3>
+                  <button onClick={() => setActiveModule("INVENTORY")} className="text-xs text-rose-600 font-bold hover:underline">
+                    Manage ➔
+                  </button>
+                </div>
+                {dashboardStats.lowStockCount === 0 ? (
+                  <p className="text-xs text-slate-400 py-6 text-center">All inventory stocks are above minimum thresholds.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {inventory
+                      .filter((i) => i.currentStock <= i.minStockLevel)
+                      .map((item) => (
+                        <div key={item.id} className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex justify-between items-center text-xs">
+                          <div>
+                            <p className="font-bold text-amber-900">{item.name}</p>
+                            <p className="text-[10px] text-amber-700">Min Alert: {item.minStockLevel} {item.unit}</p>
+                          </div>
+                          <span className="px-2 py-1 bg-amber-200 text-amber-900 font-black rounded-lg">
+                            {item.currentStock} {item.unit}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: EOD CASH DRAWER
+        ========================================================================= */}
+        {activeModule === "EOD" && (
+          <main className="p-4 md:p-6 max-w-4xl mx-auto w-full space-y-6">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+              <div className="flex justify-between items-center border-b pb-3">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <Banknote className="w-6 h-6 text-emerald-600" /> End-of-Day (EOD) Cash Drawer Reconciliation
+                  </h2>
+                  <p className="text-xs text-slate-500">Z-Report shift closing calculations and physical cash match</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setPrintEODSnapshot(eodStats);
+                    setPrintInvoiceData(null);
+                    setPrintKOTData(null);
+                    setPrintContainerLabel(null);
+                    setTimeout(() => window.print(), 100);
+                  }}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition flex items-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" /> Print Z-Report Slip
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border">
+                  <span className="text-[10px] font-bold uppercase text-slate-500">Opening Cash Float</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xl font-black">₹</span>
+                    <input
+                      type="number"
+                      value={openingFloat}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setOpeningFloat(val);
+                        localStorage.setItem("rms_opening_float", val.toString());
+                      }}
+                      className="text-xl font-black w-full border rounded-lg px-2 py-0.5 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                  <span className="text-[10px] font-bold uppercase text-emerald-700">Cash Inflows (Sales + Udhar)</span>
+                  <p className="text-2xl font-black text-emerald-900 mt-1">+ ₹{eodStats.totalCashInflow}</p>
+                </div>
+
+                <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200">
+                  <span className="text-[10px] font-bold uppercase text-rose-700">Paid Cash Expenses</span>
+                  <p className="text-2xl font-black text-rose-900 mt-1">- ₹{eodStats.cashExpenses}</p>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div>
+                  <span className="text-xs font-bold text-white/60 uppercase">Expected Physical Cash In Drawer</span>
+                  <h3 className="text-3xl font-black mt-1">₹{eodStats.expectedCashInDrawer}</h3>
+                  <p className="text-xs text-white/70 mt-1">Opening Float + Cash Sales - Cash Expenses</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-white/60 uppercase">Digital Online Collections</span>
+                  <h4 className="text-2xl font-black text-emerald-400 mt-0.5">₹{eodStats.digitalSales}</h4>
+                </div>
+              </div>
+            </div>
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: EXPENSES
+        ========================================================================= */}
+        {activeModule === "EXPENSES" && (
+          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <h2 className="text-lg font-black text-slate-900 mb-4">Record Operating Expense</h2>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const target = e.target as any;
+                  const newExpense: ExpenseRecord = {
+                    id: `EXP-${Date.now().toString().slice(-6)}`,
+                    date: new Date().toLocaleDateString(),
+                    title: target.title.value,
+                    category: target.category.value,
+                    amount: parseFloat(target.amount.value) || 0,
+                    paymentMode: target.paymentMode.value,
+                    staff: currentUserRole,
+                  };
+                  const updated = [newExpense, ...expenses];
+                  setExpenses(updated);
+                  saveToDisk("rms_expenses", updated);
+                  target.reset();
+                }}
+                className="grid grid-cols-1 sm:grid-cols-5 gap-3"
+              >
+                <input
+                  name="title"
+                  required
+                  placeholder="Expense Details (e.g. Milk & Dairy Delivery)"
+                  className="sm:col-span-2 px-3 py-2 border rounded-xl text-xs"
+                />
+                <select name="category" className="px-3 py-2 border rounded-xl text-xs bg-white">
+                  <option value="Raw Material">Raw Material</option>
+                  <option value="Electricity & Gas">Electricity & Gas</option>
+                  <option value="Rent">Rent</option>
+                  <option value="Salaries">Salaries</option>
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Misc">Misc</option>
+                </select>
+                <input
+                  name="amount"
+                  type="number"
+                  required
+                  placeholder="Amount (₹)"
+                  className="px-3 py-2 border rounded-xl text-xs"
+                />
+                <div className="flex gap-2">
+                  <select name="paymentMode" className="px-2 py-2 border rounded-xl text-xs bg-white flex-1">
+                    <option value="Cash">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Bank Transfer">Bank</option>
+                  </select>
+                  <button type="submit" className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">
+                    Add
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Expenses Ledger</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
+                      <th className="py-2">Date</th>
+                      <th className="py-2">Details</th>
+                      <th className="py-2">Category</th>
+                      <th className="py-2">Payment</th>
+                      <th className="py-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {expenses.map((exp) => (
+                      <tr key={exp.id} className="hover:bg-slate-50">
+                        <td className="py-3 text-slate-500">{exp.date}</td>
+                        <td className="py-3 font-bold text-slate-900">{exp.title}</td>
+                        <td className="py-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
+                            {exp.category}
+                          </span>
+                        </td>
+                        <td className="py-3 text-slate-600">{exp.paymentMode}</td>
+                        <td className="py-3 text-right font-black text-rose-600">
+                          {branding.currency} {exp.amount}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </main>
+        )}
+
+        {/* =========================================================================
+            MODULE: KDS
+        ========================================================================= */}
         {activeModule === "KDS" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -2430,7 +2969,6 @@ export default function UltimateRestaurantPOS() {
                 <p className="text-xs text-slate-500">Live order tickets with multi-station routing filters</p>
               </div>
 
-              {/* Station Filter Pills */}
               <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {["All Stations", "Main Kitchen", "Tandoor", "Bar/Beverages", "Bakery/Desserts"].map((st) => (
                   <button
@@ -2561,81 +3099,15 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: EOD CASH DRAWER RECONCILIATION */}
-        {activeModule === "EOD" && (
-          <main className="p-4 md:p-6 max-w-4xl mx-auto w-full space-y-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-              <div className="flex justify-between items-center border-b pb-3">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                    <Banknote className="w-6 h-6 text-emerald-600" /> End-of-Day (EOD) Cash Drawer Reconciliation
-                  </h2>
-                  <p className="text-xs text-slate-500">Z-Report shift closing calculations and physical cash match</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setPrintEODSnapshot(eodStats);
-                    setPrintInvoiceData(null);
-                    setPrintKOTData(null);
-                    setTimeout(() => window.print(), 100);
-                  }}
-                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition flex items-center gap-1.5"
-                >
-                  <Printer className="w-4 h-4" /> Print Z-Report Slip
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 bg-slate-50 rounded-2xl border">
-                  <span className="text-[10px] font-bold uppercase text-slate-500">Opening Cash Float</span>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xl font-black">₹</span>
-                    <input
-                      type="number"
-                      value={openingFloat}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        setOpeningFloat(val);
-                        localStorage.setItem("rms_opening_float", val.toString());
-                      }}
-                      className="text-xl font-black w-full border rounded-lg px-2 py-0.5 bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                  <span className="text-[10px] font-bold uppercase text-emerald-700">Cash Inflows (Sales + Udhar)</span>
-                  <p className="text-2xl font-black text-emerald-900 mt-1">+ ₹{eodStats.totalCashInflow}</p>
-                </div>
-
-                <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200">
-                  <span className="text-[10px] font-bold uppercase text-rose-700">Paid Cash Expenses</span>
-                  <p className="text-2xl font-black text-rose-900 mt-1">- ₹{eodStats.cashExpenses}</p>
-                </div>
-              </div>
-
-              <div className="p-6 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4">
-                <div>
-                  <span className="text-xs font-bold text-white/60 uppercase">Expected Physical Cash In Drawer</span>
-                  <h3 className="text-3xl font-black mt-1">₹{eodStats.expectedCashInDrawer}</h3>
-                  <p className="text-xs text-white/70 mt-1">Opening Float + Cash Sales - Cash Expenses</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-xs font-bold text-white/60 uppercase">Digital Online Collections</span>
-                  <h4 className="text-2xl font-black text-emerald-400 mt-0.5">₹{eodStats.digitalSales}</h4>
-                </div>
-              </div>
-            </div>
-          </main>
-        )}
-
-        {/* MODULE: TABLES FLOOR PLAN */}
+        {/* =========================================================================
+            MODULE: TABLES & CHANNELS
+        ========================================================================= */}
         {activeModule === "TABLES" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
               <div>
                 <h2 className="text-xl font-black text-slate-900">Floor Tables & Omnichannel Channels</h2>
-                <p className="text-xs text-slate-500">Monitor live occupancy, delivery channels, and guest tables</p>
+                <p className="text-xs text-slate-500">Monitor live occupancy, delivery queues, and dine-in layout</p>
               </div>
               {["OWNER", "MANAGER"].includes(currentUserRole) && (
                 <button
@@ -2720,445 +3192,9 @@ export default function UltimateRestaurantPOS() {
           </main>
         )}
 
-        {/* MODULE: INVENTORY */}
-        {activeModule === "INVENTORY" && (
-          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
-            <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-              <div>
-                <h2 className="text-xl font-black text-slate-900">Inventory & Raw Materials</h2>
-                <p className="text-xs text-slate-500">Auto-deduction on orders and low stock threshold warnings</p>
-              </div>
-              <button
-                onClick={() => setShowAddInventoryModal(true)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-slate-800"
-              >
-                <Plus className="w-4 h-4" /> + Add New Raw Material
-              </button>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
-                      <th className="py-2">Ingredient</th>
-                      <th className="py-2">Unit</th>
-                      <th className="py-2">Current Stock</th>
-                      <th className="py-2">Low Warning Level</th>
-                      <th className="py-2">Cost / Unit</th>
-                      <th className="py-2 text-right">Quick Stock Inward</th>
-                      <th className="py-2 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {inventory.map((item) => {
-                      const isLow = item.currentStock <= item.minStockLevel;
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-50">
-                          <td className="py-3 font-bold text-slate-900">{item.name}</td>
-                          <td className="py-3 text-slate-500 uppercase">{item.unit}</td>
-                          <td className="py-3">
-                            <span className={`px-2 py-0.5 rounded-full font-bold ${isLow ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}>
-                              {item.currentStock} {item.unit}
-                            </span>
-                          </td>
-                          <td className="py-3 text-slate-600">{item.minStockLevel} {item.unit}</td>
-                          <td className="py-3 font-semibold text-slate-800">{branding.currency} {item.costPerUnit}</td>
-                          <td className="py-3 text-right">
-                            <button
-                              onClick={() => {
-                                const addAmount = prompt(`Add stock inward for ${item.name} (${item.unit}):`, "5");
-                                if (addAmount && !isNaN(parseFloat(addAmount))) {
-                                  const updated = inventory.map((i) =>
-                                    i.id === item.id ? { ...i, currentStock: parseFloat((i.currentStock + parseFloat(addAmount)).toFixed(2)) } : i
-                                  );
-                                  setInventory(updated);
-                                  saveToDisk("rms_inventory", updated);
-                                }
-                              }}
-                              className="px-3 py-1 bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800 transition"
-                            >
-                              + Inward Stock
-                            </button>
-                          </td>
-                          <td className="py-3 text-center">
-                            <button
-                              onClick={() => handleDeleteInventory(item.id)}
-                              className="p-1.5 text-slate-300 hover:text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </main>
-        )}
-
-        {/* MODULE: DASHBOARD */}
-        {activeModule === "DASHBOARD" && (
-          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-black text-slate-900">Executive Performance Dashboard</h2>
-                <p className="text-xs text-slate-500">Live consolidated financial reports & floor metrics</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Gross Sales Revenue</span>
-                <p className="text-2xl font-black text-slate-900 mt-1">{branding.currency} {dashboardStats.totalSales}</p>
-                <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
-                  <ArrowUpRight className="w-3 h-3" /> {dashboardStats.totalOrders} Settled Orders
-                </span>
-              </div>
-
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Total Expenses</span>
-                <p className="text-2xl font-black text-rose-600 mt-1">{branding.currency} {dashboardStats.totalExpense}</p>
-                <span className="text-[10px] text-slate-500 font-medium mt-1">Operational costs</span>
-              </div>
-
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Estimated Net Profit</span>
-                <p className={`text-2xl font-black mt-1 ${dashboardStats.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                  {branding.currency} {dashboardStats.netProfit}
-                </p>
-                <span className="text-[10px] text-slate-500 font-medium mt-1">Gross sales minus expenses</span>
-              </div>
-
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Current Outstanding Udhar</span>
-                <p className="text-2xl font-black text-rose-600 mt-1">{branding.currency} {dashboardStats.currentOutstanding}</p>
-                <span className="text-[10px] text-slate-500 font-medium mt-1">Pending customer recovery</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Collections Breakdown</h3>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Banknote className="w-4 h-4 text-emerald-600" /> Cash Drawer:</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cashSales}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><QrCode className="w-4 h-4 text-blue-600" /> UPI Online:</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.upiSales}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-slate-50 rounded-xl">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5"><CreditCard className="w-4 h-4 text-purple-600" /> Card / POS:</span>
-                    <span className="font-black text-slate-900">{branding.currency} {dashboardStats.cardSales}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" /> Low Stock Alerts
-                  </h3>
-                  <button onClick={() => setActiveModule("INVENTORY")} className="text-xs text-rose-600 font-bold hover:underline">
-                    Manage ➔
-                  </button>
-                </div>
-                {dashboardStats.lowStockCount === 0 ? (
-                  <p className="text-xs text-slate-400 py-6 text-center">All inventory stocks are above minimum thresholds.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {inventory
-                      .filter((i) => i.currentStock <= i.minStockLevel)
-                      .map((item) => (
-                        <div key={item.id} className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex justify-between items-center text-xs">
-                          <div>
-                            <p className="font-bold text-amber-900">{item.name}</p>
-                            <p className="text-[10px] text-amber-700">Min Alert: {item.minStockLevel} {item.unit}</p>
-                          </div>
-                          <span className="px-2 py-1 bg-amber-200 text-amber-900 font-black rounded-lg">
-                            {item.currentStock} {item.unit}
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </main>
-        )}
-
-        {/* MODULE: EXPENSES */}
-        {activeModule === "EXPENSES" && (
-          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <h2 className="text-lg font-black text-slate-900 mb-4">Record Operating Expense</h2>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const target = e.target as any;
-                  const newExpense: ExpenseRecord = {
-                    id: `EXP-${Date.now().toString().slice(-6)}`,
-                    date: new Date().toLocaleDateString(),
-                    title: target.title.value,
-                    category: target.category.value,
-                    amount: parseFloat(target.amount.value) || 0,
-                    paymentMode: target.paymentMode.value,
-                    staff: currentUserRole,
-                  };
-                  const updated = [newExpense, ...expenses];
-                  setExpenses(updated);
-                  saveToDisk("rms_expenses", updated);
-                  target.reset();
-                }}
-                className="grid grid-cols-1 sm:grid-cols-5 gap-3"
-              >
-                <input
-                  name="title"
-                  required
-                  placeholder="Expense Details (e.g. Milk & Dairy Delivery)"
-                  className="sm:col-span-2 px-3 py-2 border rounded-xl text-xs"
-                />
-                <select name="category" className="px-3 py-2 border rounded-xl text-xs bg-white">
-                  <option value="Raw Material">Raw Material</option>
-                  <option value="Electricity & Gas">Electricity & Gas</option>
-                  <option value="Rent">Rent</option>
-                  <option value="Salaries">Salaries</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Misc">Misc</option>
-                </select>
-                <input
-                  name="amount"
-                  type="number"
-                  required
-                  placeholder="Amount (₹)"
-                  className="px-3 py-2 border rounded-xl text-xs"
-                />
-                <div className="flex gap-2">
-                  <select name="paymentMode" className="px-2 py-2 border rounded-xl text-xs bg-white flex-1">
-                    <option value="Cash">Cash</option>
-                    <option value="UPI">UPI</option>
-                    <option value="Bank Transfer">Bank</option>
-                  </select>
-                  <button type="submit" className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">
-                    Add
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">Expenses Ledger</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
-                      <th className="py-2">Date</th>
-                      <th className="py-2">Details</th>
-                      <th className="py-2">Category</th>
-                      <th className="py-2">Payment</th>
-                      <th className="py-2 text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {expenses.map((exp) => (
-                      <tr key={exp.id} className="hover:bg-slate-50">
-                        <td className="py-3 text-slate-500">{exp.date}</td>
-                        <td className="py-3 font-bold text-slate-900">{exp.title}</td>
-                        <td className="py-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
-                            {exp.category}
-                          </span>
-                        </td>
-                        <td className="py-3 text-slate-600">{exp.paymentMode}</td>
-                        <td className="py-3 text-right font-black text-rose-600">
-                          {branding.currency} {exp.amount}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </main>
-        )}
-
-        {/* MODULE: CUSTOMERS CRM & UDHAR */}
-        {activeModule === "CUSTOMERS" && (
-          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">Customer CRM, Loyalty Points & Credit Ledger</h2>
-                  <p className="text-xs text-slate-500">Track loyalty rewards, B2B companies, and clear pending credit dues</p>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
-                      <th className="py-2">Customer Name</th>
-                      <th className="py-2">Mobile Phone</th>
-                      <th className="py-2">Company / GSTIN</th>
-                      <th className="py-2">Loyalty Points</th>
-                      <th className="py-2">Lifetime Spent</th>
-                      <th className="py-2">Outstanding Udhar</th>
-                      <th className="py-2 text-right">Credit Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {customers.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-400">
-                          No customers recorded yet. Add customer phone numbers during billing to build CRM.
-                        </td>
-                      </tr>
-                    ) : (
-                      customers.map((cust, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50">
-                          <td className="py-3 font-bold text-slate-900">{cust.name}</td>
-                          <td className="py-3 text-slate-600 font-mono">{cust.phone}</td>
-                          <td className="py-3 text-slate-600">
-                            {cust.companyName || cust.gstin ? `${cust.companyName || ""} (${cust.gstin || ""})` : "Individual"}
-                          </td>
-                          <td className="py-3">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
-                              ★ {cust.loyaltyPoints} pts
-                            </span>
-                          </td>
-                          <td className="py-3 font-bold text-slate-900">{branding.currency} {cust.totalSpent}</td>
-                          <td className="py-3">
-                            <span className={`px-2 py-1 rounded-lg font-black ${cust.creditBalance > 0 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}>
-                              {branding.currency} {cust.creditBalance}
-                            </span>
-                          </td>
-                          <td className="py-3 text-right">
-                            {cust.creditBalance > 0 ? (
-                              <button
-                                onClick={() => {
-                                  setSelectedCustForCredit(cust);
-                                  setReceivedAmountInput(cust.creditBalance.toString());
-                                  setShowReceiveCreditModal(true);
-                                }}
-                                className="px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition flex items-center gap-1 ml-auto"
-                              >
-                                <HandCoins className="w-3.5 h-3.5" /> Receive Payment
-                              </button>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 font-semibold">All Dues Cleared</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </main>
-        )}
-
-        {/* MODULE: AUDIT (WITH CSV EXPORT & ADMIN BILL EDIT) */}
-        {activeModule === "AUDIT" && (
-          <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                    <Receipt className="w-5 h-5 text-slate-600" /> Settled Invoices Audit
-                  </h2>
-                  <p className="text-xs text-slate-500">Tax invoices with B2B corporate details and payment breakdowns</p>
-                </div>
-                <button
-                  onClick={handleExportCSV}
-                  className="px-4 py-2 bg-emerald-700 text-white rounded-xl text-xs font-bold hover:bg-emerald-800 transition flex items-center gap-1.5 shadow-sm"
-                >
-                  <FileSpreadsheet className="w-4 h-4" /> Download CA Sales CSV Report
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="text-slate-400 uppercase font-bold border-b pb-2">
-                      <th className="py-2">Invoice No</th>
-                      <th className="py-2">Date & Time</th>
-                      <th className="py-2">Channel / Table</th>
-                      <th className="py-2">Customer / B2B</th>
-                      <th className="py-2">Payment Breakdown</th>
-                      <th className="py-2 text-right">CGST</th>
-                      <th className="py-2 text-right">SGST</th>
-                      <th className="py-2 text-right">Grand Total</th>
-                      <th className="py-2 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {invoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50">
-                        <td className="py-3 font-mono font-bold text-slate-900">{inv.invoiceNo}</td>
-                        <td className="py-3 text-slate-500">{inv.date}</td>
-                        <td className="py-3 font-semibold text-slate-700">
-                          {inv.channel} ({inv.table})
-                        </td>
-                        <td className="py-3 text-slate-600">
-                          <span className="font-bold text-slate-900 block">{inv.customerName || "Guest"}</span>
-                          {inv.customerCompany && <span className="text-[10px] text-blue-600 block">{inv.customerCompany}</span>}
-                          {inv.customerGst && <span className="text-[10px] text-slate-400 font-mono block">GSTIN: {inv.customerGst}</span>}
-                        </td>
-                        <td className="py-3">
-                          {inv.paymentMode === "Split" && inv.splitDetails ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 block w-fit">
-                              Cash: ₹{inv.splitDetails.cash} + {inv.splitDetails.digitalMode}: ₹{inv.splitDetails.digitalAmount}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
-                              {inv.paymentMode}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 text-right">{branding.currency} {inv.cgst}</td>
-                        <td className="py-3 text-right">{branding.currency} {inv.sgst}</td>
-                        <td className="py-3 text-right font-black text-slate-900">{branding.currency} {inv.grandTotal}</td>
-                        <td className="py-3 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => {
-                                setPrintInvoiceData(inv);
-                                setPrintKOTData(null);
-                                setPrintEODSnapshot(null);
-                                setTimeout(() => window.print(), 100);
-                              }}
-                              className="p-1 hover:text-rose-600 text-slate-600"
-                              title="Reprint Bill"
-                            >
-                              <Printer className="w-4 h-4" />
-                            </button>
-
-                            {currentUserRole === "OWNER" && (
-                              <button
-                                onClick={() => handleOpenBillEdit(inv)}
-                                className="p-1 hover:text-blue-600 text-slate-600"
-                                title="Edit Bill (Admin)"
-                              >
-                                <FileEdit className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </main>
-        )}
-
-        {/* MODULE: SETTINGS (ADMIN ONLY) */}
+        {/* =========================================================================
+            MODULE: SETTINGS (ADMIN ONLY)
+        ========================================================================= */}
         {activeModule === "SETTINGS" && (
           <main className="p-4 md:p-6 max-w-4xl mx-auto w-full space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -3280,7 +3316,7 @@ export default function UltimateRestaurantPOS() {
               </div>
             </div>
 
-            {/* Admin-Only Danger Zone for Software Reset */}
+            {/* Admin-Only Factory Data Reset */}
             <div className="bg-red-50 p-6 rounded-2xl border border-red-200 space-y-2">
               <h3 className="text-base font-black text-red-900 flex items-center gap-2">
                 <RotateCcw className="w-4 h-4 text-red-600" /> Admin Only: Factory Data Reset
